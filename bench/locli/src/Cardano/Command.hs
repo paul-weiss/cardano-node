@@ -317,6 +317,7 @@ writerOpt ctor desc rcFormat = do
    optDescSuf = \case
      AsJSON    -> (,) "json"    " results as complete JSON dump"
      AsGnuplot -> (,) "gnuplot" " as individual Gnuplot files"
+     AsLaTeX   -> (,) "latex"   " as LaTeX file"
      AsOrg     -> (,) "org"     " as Org-mode table"
      AsReport  -> (,) "org-report"  " as Org-mode summary table"
      AsPretty  -> (,) "pretty"  " as text report"
@@ -814,6 +815,8 @@ runChainCommand s c@(Compare ede mTmpl outf@(TextOutputFile outfp) runs) = do
       <*> readJsonData bpf  (CommandError c)
   (tmpl, tmplEnv, orgReport) <- case xs of
     baseline:deltas@(_:_) -> liftIO $ do
+      (_titling, _summary, _t3, _t4, _t5, _t6) <- liftIO $ do
+          Cardano.Report.generate' baseline deltas
       Cardano.Report.generate ede mTmpl baseline deltas
     _ -> throwE $ CommandError c $ mconcat
          [ "At least two runs required for comparison." ]
