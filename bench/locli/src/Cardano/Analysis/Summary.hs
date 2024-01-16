@@ -198,8 +198,12 @@ computeSummary sumAnalysisTime
    lineRates  = zipWith (/) (textLinesEmitted <&> fromIntegral)
                             (runtimes <&> fromIntegral @Int . truncate)
 
+   flattenSlot :: CDFList (CDF I) (DataDomain I SlotNo) -> [DataDomain I SlotNo]
+   flattenSlot (CDFListSingleton (x :: DataDomain I SlotNo)) = [x]
+   flattenSlot (CDFListMultiple (xs :: [DataDomain I SlotNo])) = xs
    (,,) sumDomainTime sumStartSpread sumStopSpread =
-     slotDomains sumGenesis (losFirsts, losLasts) mpDomainSlots
+     slotDomains sumGenesis (losFirsts, losLasts)
+       $ flattenSlot mpDomainSlots
 
    sumChainRejectionStats :: [(ChainFilter, Int)]
    sumChainRejectionStats =

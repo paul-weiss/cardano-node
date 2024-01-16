@@ -9,6 +9,7 @@ module Cardano.Analysis.API.Types (module Cardano.Analysis.API.Types) where
 
 import Cardano.Prelude          hiding (head)
 
+import Data.Aeson ((.=))
 import Data.Text                qualified as T
 import Options.Applicative      qualified as Opt
 
@@ -60,7 +61,8 @@ data Summary f where
 
 type SummaryOne   = Summary I
 type MultiSummary = Summary (CDF I)
-data SomeSummary  = forall f. KnownCDF f => SomeSummary (Summary f)
+data SomeSummary  =
+  forall f. (KnownCDF f, FromJSON (Summary f), ToJSON (Summary f)) => SomeSummary (Summary f)
 
 deriving instance (forall a. FromJSON a => FromJSON (f a)) => FromJSON (Summary f)
 deriving instance (forall a.   ToJSON a =>   ToJSON (f a)) =>   ToJSON (Summary f)
@@ -72,6 +74,8 @@ instance FromJSON SomeSummary where
     (SomeSummary <$> parseJSON @SummaryOne   x)
     <|>
     (SomeSummary <$> parseJSON @MultiSummary x)
+instance ToJSON SomeSummary where
+  toJSON (SomeSummary summ) = object [ "SomeSummary" .= toJSON summ ]
 instance FromJSON SomeBlockProp where
   parseJSON x =
     (SomeBlockProp <$> parseJSON @BlockPropOne   x)
@@ -146,7 +150,7 @@ deriving instance
 
 type BlockPropOne   = BlockProp I
 type MultiBlockProp = BlockProp (CDF I)
-data SomeBlockProp  = forall f. KnownCDF f => SomeBlockProp (BlockProp f)
+data SomeBlockProp  = forall f. (KnownCDF f, forall a. ToJSON a => ToJSON (f a), forall a. FromJSON a => FromJSON (f a)) => SomeBlockProp (BlockProp f)
 
 -- | The top-level representation of the machine timeline analysis results.
 data MachPerf f

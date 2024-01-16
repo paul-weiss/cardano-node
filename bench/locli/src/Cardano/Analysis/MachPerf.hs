@@ -573,7 +573,7 @@ slotStatsMachPerf _ (JsonLogfile f, []) =
 slotStatsMachPerf run (f, slots) =
   Right . (f,) $ MachPerf
   { mpVersion            = getLocliVersion
-  , mpDomainSlots        = domSlots
+  , mpDomainSlots        = CDFListSingleton domSlots
   , mpDomainCDFSlots     = domSlots -- At unit-arity it's just a replica.
   , cdfHostSlots         = dist [fromIntegral . unI $ ddFilteredCount domSlots]
   --
@@ -629,7 +629,7 @@ summariseClusterPerf centiles mps@(headline:_) = do
 
   pure MachPerf
     { mpVersion        = mpVersion headline
-    , mpDomainSlots    = slotDomains
+    , mpDomainSlots    = CDFListMultiple slotDomains
     , mpDomainCDFSlots = slotDomains & traverseDataDomain (cdf stdCentiles . fmap unI)
     , ..
     }
@@ -637,8 +637,11 @@ summariseClusterPerf centiles mps@(headline:_) = do
    comb :: forall a. Divisible a => Combine I a
    comb = stdCombine1 centiles
 
+   flattenSlot :: CDFList I (DataDomain I SlotNo) -> [DataDomain I SlotNo]
+   flattenSlot (CDFListSingleton x) = [x]
+   flattenSlot (CDFListMultiple xs) = xs
    slotDomains :: [DataDomain I SlotNo]
-   slotDomains = mps <&> mpDomainSlots
+   slotDomains = concatMap flattenSlot $ mps <&> mpDomainSlots
 
 summariseMultiClusterPerf :: [Centile] -> [ClusterPerf] -> Either CDFError MultiClusterPerf
 summariseMultiClusterPerf _ [] = error "Asked to summarise empty list of MachPerfOne"
@@ -664,7 +667,7 @@ summariseMultiClusterPerf centiles mps@(headline:_) = do
 
   pure . MultiClusterPerf $ MachPerf
     { mpVersion        = mpVersion headline
-    , mpDomainSlots    = slotDomains
+    , mpDomainSlots    = CDFListMultiple slotDomains
     , mpDomainCDFSlots =
       -- The simpler option, smashing the data from multiple runs into a single CDF:
         slotDomains & traverseDataDomain (cdf stdCentiles . fmap unI)
@@ -674,8 +677,11 @@ summariseMultiClusterPerf centiles mps@(headline:_) = do
     , ..
     }
  where
+   flattenSlot :: CDFList (CDF I) (DataDomain I SlotNo) -> [DataDomain I SlotNo]
+   flattenSlot (CDFListSingleton x) = [x]
+   flattenSlot (CDFListMultiple xs) = xs
    slotDomains :: [DataDomain I SlotNo]
-   slotDomains = concat $ mps <&> mpDomainSlots
+   slotDomains = concatMap flattenSlot $ mps <&> mpDomainSlots
 
    comb :: forall a. Divisible a => Combine (CDF I) a
    comb = stdCombine2 centiles
