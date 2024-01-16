@@ -135,6 +135,10 @@ newtype GnuplotOutputFile
   = GnuplotOutputFile { unGnuplotOutputFile :: FilePath }
   deriving (Show, Eq)
 
+newtype LaTeXOutputFile
+  = LaTeXOutputFile { unLaTeXOutputFile :: FilePath }
+  deriving (Show, Eq)
+
 newtype OrgOutputFile
   = OrgOutputFile { unOrgOutputFile :: FilePath }
   deriving (Show, Eq)
@@ -225,7 +229,15 @@ optGnuplotOutputFile optname desc =
   fmap GnuplotOutputFile $
     Opt.option Opt.str
       $ long optname
-      <> metavar "CDF-OUTFILE"
+      <> metavar "GNUPLOT-OUTFILE"
+      <> help desc
+
+optLaTeXOutputFile :: String -> String -> Parser LaTeXOutputFile
+optLaTeXOutputFile optname desc =
+  fmap LaTeXOutputFile $
+    Opt.option Opt.str
+      $ long optname
+      <> metavar "LATEX-OUTFILE"
       <> help desc
 
 optTextInputFile :: String -> String -> Parser TextInputFile

@@ -23,7 +23,7 @@ import Options.Applicative              qualified as Opt
 
 import Data.CDF
 
-import Cardano.Org
+import Cardano.Table
 import Cardano.Util
 import Cardano.Analysis.API
 
@@ -46,6 +46,7 @@ mkRenderConfigDef rcFormat =
 data RenderFormat
   = AsJSON
   | AsGnuplot
+  | AsLaTeX
   | AsOrg
   | AsReport
   | AsPretty
@@ -113,6 +114,7 @@ renderAnchorDate :: Anchor -> Text
 renderAnchorDate = showText . posixSecondsToUTCTime . secondsToNominalDiffTime . fromIntegral @Int . round . utcTimeToPOSIXSeconds . aWhen
 
 renderAnchorOrgProperties :: RenderConfig -> Anchor -> [(Text, Text)]
+renderAnchorOrgProperties RenderConfig{rcFormat=AsLaTeX} _ = []
 renderAnchorOrgProperties RenderConfig{rcDateVerMetadata, rcRunMetadata} a =
   [ ("TITLE",    renderAnchorRuns a )                  | rcRunMetadata ]
   <>
@@ -163,8 +165,16 @@ renderFieldCentiles x cdfProj Field{..} =
 renderSummary :: forall f a. (a ~ Summary f, TimelineFields a, ToJSON a)
   => RenderConfig -> Anchor -> (Field ISelect I a -> Bool) -> a -> [Text]
 renderSummary RenderConfig{rcFormat=AsJSON} _ _ x = (:[]) . LT.toStrict $ encodeToLazyText x
+renderSummary rc@RenderConfig{rcFormat=AsLaTeX} a fieldSelr summ =
+  renderAsLaTeX $ renderSummaryProps rc a fieldSelr summ
 renderSummary rc@RenderConfig{rcFormat=AsReport} a fieldSelr summ =
-  render $
+  renderAsOrg $ renderSummaryProps rc a fieldSelr summ
+renderSummary rc  _ _ _ =
+  error $ "renderSummary: RenderConfig not supported:  " <> show rc
+
+renderSummaryProps :: forall f a. (a ~ Summary f, TimelineFields a)
+  => RenderConfig -> Anchor -> (Field ISelect I a -> Bool) -> a -> Table
+renderSummaryProps rc a fieldSelr summ =
   Props
   { oProps = renderAnchorOrgProperties rc a
   , oConstants = []
@@ -186,13 +196,11 @@ renderSummary rc@RenderConfig{rcFormat=AsReport} a fieldSelr summ =
  where
    fields' :: [Field ISelect I a]
    fields' = filter fieldSelr timelineFields
-renderSummary rc  _ _ _ =
-  error $ "renderSummary: RenderConfig not supported:  " <> show rc
 
 renderProfilingData ::
   RenderConfig -> Anchor -> (ProfileEntry (CDF I) -> Bool) -> ProfilingData (CDF I) -> [Text]
 renderProfilingData rc a flt pd =
-  render $
+  renderAsOrg $
   Props
   { oProps = renderAnchorOrgProperties rc a
   , oConstants = []
@@ -337,25 +345,14 @@ modeFilename :: TextOutputFile -> Text -> RenderFormat -> TextOutputFile
 modeFilename orig@(TextOutputFile f) name = \case
   AsJSON    -> orig
   AsGnuplot -> printf f name & TextOutputFile
+  AsLaTeX   -> orig
   AsOrg     -> orig
   AsReport  -> orig
   AsPretty  -> orig
 
-renderAnalysisCDFs :: forall a p. (CDFFields a p, KnownCDF p, ToJSON (a p)) => Anchor -> (Field DSelect p a -> Bool) -> CDF2Aspect -> Maybe [Centile] -> RenderConfig -> a p -> [(Text, [Text])]
+renderProps :: forall a p. (CDFFields a p, KnownCDF p) => Anchor -> (Field DSelect p a -> Bool) -> Maybe [Centile] -> RenderConfig -> a p -> Table
 
-renderAnalysisCDFs _anchor _fieldSelr _c2a _centileSelr RenderConfig{rcFormat=AsJSON} x = (:[]) . ("",) . (:[]) . LT.toStrict $
-  encodeToLazyText x
-
-renderAnalysisCDFs anchor fieldSelr _c2a _centileSelr rc@RenderConfig{rcFormat=AsGnuplot} x =
-  filter fieldSelr cdfFields <&>
-  \Field{fId=cdfField} ->
-    (,) cdfField $
-    "# " <> renderAnchor rc anchor :
-    (mapRenderCDF ((== cdfField) . fId) Nothing (unliftCDFValExtra cdfIx) x
-     & fmap (T.intercalate " "))
-
-renderAnalysisCDFs a fieldSelr _c2a centileSelr rc@RenderConfig{rcFormat=AsOrg} x =
-  (:[]) . ("",) . render $
+renderProps a fieldSelr centileSelr rc x =
   Props
   { oProps = renderAnchorOrgProperties rc a
   , oConstants = []
@@ -393,8 +390,27 @@ renderAnalysisCDFs a fieldSelr _c2a centileSelr rc@RenderConfig{rcFormat=AsOrg} 
                      id
                      centileSelr
 
+renderAnalysisCDFs :: forall a p. (CDFFields a p, KnownCDF p, ToJSON (a p)) => Anchor -> (Field DSelect p a -> Bool) -> CDF2Aspect -> Maybe [Centile] -> RenderConfig -> a p -> [(Text, [Text])]
+
+renderAnalysisCDFs _anchor _fieldSelr _c2a _centileSelr RenderConfig{rcFormat=AsJSON} x = (:[]) . ("",) . (:[]) . LT.toStrict $
+  encodeToLazyText x
+
+renderAnalysisCDFs anchor fieldSelr _c2a _centileSelr rc@RenderConfig{rcFormat=AsGnuplot} x =
+  filter fieldSelr cdfFields <&>
+  \Field{fId=cdfField} ->
+    (,) cdfField $
+    "# " <> renderAnchor rc anchor :
+    (mapRenderCDF ((== cdfField) . fId) Nothing (unliftCDFValExtra cdfIx) x
+     & fmap (T.intercalate " "))
+
+renderAnalysisCDFs a fieldSelr _c2a centileSelr rc@RenderConfig{rcFormat=AsOrg} x =
+  (:[]) . ("",) . renderAsOrg $ renderProps a fieldSelr centileSelr rc x
+
+renderAnalysisCDFs a fieldSelr _c2a centileSelr rc@RenderConfig{rcFormat=AsLaTeX} x =
+  (:[]) . ("",) . renderAsLaTeX $ renderProps a fieldSelr centileSelr rc x
+
 renderAnalysisCDFs a fieldSelr aspect _centileSelr rc@RenderConfig{rcFormat=AsReport} x =
-  (:[]) . ("",) . render $
+  (:[]) . ("",) . renderAsOrg $
   Props
   { oProps = renderAnchorOrgProperties rc a
   , oConstants = []
