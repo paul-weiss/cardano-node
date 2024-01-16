@@ -23,7 +23,7 @@ import Options.Applicative              qualified as Opt
 
 import Data.CDF
 
-import Cardano.Org
+import Cardano.Table
 import Cardano.Util
 import Cardano.Analysis.API
 
@@ -46,6 +46,7 @@ mkRenderConfigDef rcFormat =
 data RenderFormat
   = AsJSON
   | AsGnuplot
+  | AsLaTeX
   | AsOrg
   | AsReport
   | AsPretty
@@ -113,6 +114,7 @@ renderAnchorDate :: Anchor -> Text
 renderAnchorDate = showText . posixSecondsToUTCTime . secondsToNominalDiffTime . fromIntegral @Int . round . utcTimeToPOSIXSeconds . aWhen
 
 renderAnchorOrgProperties :: RenderConfig -> Anchor -> [(Text, Text)]
+renderAnchorOrgProperties RenderConfig{rcFormat=AsLaTeX} _ = []
 renderAnchorOrgProperties RenderConfig{rcDateVerMetadata, rcRunMetadata} a =
   [ ("TITLE",    renderAnchorRuns a )                  | rcRunMetadata ]
   <>
@@ -163,8 +165,16 @@ renderFieldCentiles x cdfProj Field{..} =
 renderSummary :: forall f a. (a ~ Summary f, TimelineFields a, ToJSON a)
   => RenderConfig -> Anchor -> (Field ISelect I a -> Bool) -> a -> [Text]
 renderSummary RenderConfig{rcFormat=AsJSON} _ _ x = (:[]) . LT.toStrict $ encodeToLazyText x
+renderSummary rc@RenderConfig{rcFormat=AsLaTeX} a fieldSelr summ =
+  renderAsLaTeX $ renderSummaryProps rc a fieldSelr summ
 renderSummary rc@RenderConfig{rcFormat=AsReport} a fieldSelr summ =
-  render $
+  renderAsOrg $ renderSummaryProps rc a fieldSelr summ
+renderSummary rc  _ _ _ =
+  error $ "renderSummary: RenderConfig not supported:  " <> show rc
+
+renderSummaryProps :: forall f a. (a ~ Summary f, TimelineFields a)
+  => RenderConfig -> Anchor -> (Field ISelect I a -> Bool) -> a -> Table
+renderSummaryProps rc a fieldSelr summ =
   Props
   { oProps = renderAnchorOrgProperties rc a
   , oConstants = []
@@ -173,9 +183,7 @@ renderSummary rc@RenderConfig{rcFormat=AsReport} a fieldSelr summ =
     { tColHeaders     = ["Value"]
     , tExtended       = True
     , tApexHeader     = Just "Parameter"
-    , tColumns        = --transpose $
-                        [fields' <&> renderScalarLim (Just 32) summ]
-    -- , tColumns        = [kvs <&> snd]
+    , tColumns        = [fields' <&> renderScalarLim (Just 32) summ]
     , tRowHeaders     = fields' <&> fShortDesc
     , tSummaryHeaders = []
     , tSummaryValues  = []
@@ -186,13 +194,11 @@ renderSummary rc@RenderConfig{rcFormat=AsReport} a fieldSelr summ =
  where
    fields' :: [Field ISelect I a]
    fields' = filter fieldSelr timelineFields
-renderSummary rc  _ _ _ =
-  error $ "renderSummary: RenderConfig not supported:  " <> show rc
 
 renderProfilingData ::
   RenderConfig -> Anchor -> (ProfileEntry (CDF I) -> Bool) -> ProfilingData (CDF I) -> [Text]
 renderProfilingData rc a flt pd =
-  render $
+  renderAsOrg $
   Props
   { oProps = renderAnchorOrgProperties rc a
   , oConstants = []
@@ -337,25 +343,14 @@ modeFilename :: TextOutputFile -> Text -> RenderFormat -> TextOutputFile
 modeFilename orig@(TextOutputFile f) name = \case
   AsJSON    -> orig
   AsGnuplot -> printf f name & TextOutputFile
+  AsLaTeX   -> orig
   AsOrg     -> orig
   AsReport  -> orig
   AsPretty  -> orig
 
-renderAnalysisCDFs :: forall a p. (CDFFields a p, KnownCDF p, ToJSON (a p)) => Anchor -> (Field DSelect p a -> Bool) -> CDF2Aspect -> Maybe [Centile] -> RenderConfig -> a p -> [(Text, [Text])]
+renderProps :: forall a p. (CDFFields a p, KnownCDF p) => Anchor -> (Field DSelect p a -> Bool) -> Maybe [Centile] -> RenderConfig -> a p -> Table
 
-renderAnalysisCDFs _anchor _fieldSelr _c2a _centileSelr RenderConfig{rcFormat=AsJSON} x = (:[]) . ("",) . (:[]) . LT.toStrict $
-  encodeToLazyText x
-
-renderAnalysisCDFs anchor fieldSelr _c2a _centileSelr rc@RenderConfig{rcFormat=AsGnuplot} x =
-  filter fieldSelr cdfFields <&>
-  \Field{fId=cdfField} ->
-    (,) cdfField $
-    "# " <> renderAnchor rc anchor :
-    (mapRenderCDF ((== cdfField) . fId) Nothing (unliftCDFValExtra cdfIx) x
-     & fmap (T.intercalate " "))
-
-renderAnalysisCDFs a fieldSelr _c2a centileSelr rc@RenderConfig{rcFormat=AsOrg} x =
-  (:[]) . ("",) . render $
+renderProps a fieldSelr centileSelr rc x =
   Props
   { oProps = renderAnchorOrgProperties rc a
   , oConstants = []
@@ -393,70 +388,28 @@ renderAnalysisCDFs a fieldSelr _c2a centileSelr rc@RenderConfig{rcFormat=AsOrg} 
                      id
                      centileSelr
 
+renderAnalysisCDFs :: forall a p. (CDFFields a p, KnownCDF p, ToJSON (a p)) => Anchor -> (Field DSelect p a -> Bool) -> CDF2Aspect -> Maybe [Centile] -> RenderConfig -> a p -> [(Text, [Text])]
+
+-- This use of encodeToLazyText demands the ToJSON constraint.
+renderAnalysisCDFs _anchor _fieldSelr _c2a _centileSelr RenderConfig{rcFormat=AsJSON} x =
+  (:[]) . ("",) . (:[]) . LT.toStrict $ encodeToLazyText x
+
+renderAnalysisCDFs anchor fieldSelr _c2a _centileSelr rc@RenderConfig{rcFormat=AsGnuplot} x =
+  filter fieldSelr cdfFields <&>
+  \Field{fId=cdfField} ->
+    (,) cdfField $
+    "# " <> renderAnchor rc anchor :
+    (mapRenderCDF ((== cdfField) . fId) Nothing (unliftCDFValExtra cdfIx) x
+     & fmap (T.intercalate " "))
+
+renderAnalysisCDFs a fieldSelr _c2a centileSelr rc@RenderConfig{rcFormat=AsOrg} x =
+  (:[]) . ("",) . renderAsOrg $ renderProps a fieldSelr centileSelr rc x
+
+renderAnalysisCDFs a fieldSelr _c2a centileSelr rc@RenderConfig{rcFormat=AsLaTeX} x =
+  (:[]) . ("",) . renderAsLaTeX $ mkReportProps a fieldSelr _c2a centileSelr rc x
+
 renderAnalysisCDFs a fieldSelr aspect _centileSelr rc@RenderConfig{rcFormat=AsReport} x =
-  (:[]) . ("",) . render $
-  Props
-  { oProps = renderAnchorOrgProperties rc a
-  , oConstants = []
-  , oBody = (:[]) $
-    Table
-    { tColHeaders     = fst (hdrsProjs @Integer) -- This is crazy.
-    , tExtended       = True
-    , tApexHeader     = Just "metric"
-    , tColumns        = transpose $
-                        fields' <&>
-                        fmap (formatDouble W6)
-                        . mapFieldWithKey x (snd hdrsProjs)
-    , tRowHeaders     = fields' <&> (\Field{..} ->
-                                       fShortDesc <> ", " <> renderUnit fUnit)
-    , tSummaryHeaders = []
-    , tSummaryValues  = []
-    , tFormula = []
-    , tConstants = [("nSamples",
-                     fields' <&> mapField x (formatInt W4 . cdfSize) & head)]
-    }
-  }
- where
-   fields' :: [Field DSelect p a]
-   fields' = filter fieldSelr cdfFields
-
-   hdrsProjs :: forall v. (Divisible v) => ([Text], Field DSelect p a -> CDF p v -> [Double])
-   hdrsProjs = aspectColHeadersAndProjections aspect
-
-   aspectColHeadersAndProjections :: forall v. (Divisible v)
-                                  => CDF2Aspect -> ([Text], Field DSelect p a -> CDF p v -> [Double])
-   aspectColHeadersAndProjections = \case
-     OfOverallDataset ->
-       (,)
-       ["average", "CoV", "min", "max", "stddev", "range", "precision", "size"]
-       \Field{..} c@CDF{cdfRange=Interval cdfMin cdfMax, ..} ->
-         let avg = cdfAverageVal c & toDouble in
-         [ avg
-         , cdfStddev / avg
-         , fromRational . toRational $ cdfMin
-         , fromRational . toRational $ cdfMax
-         , cdfStddev
-         , fromRational . toRational $ cdfMax - cdfMin
-         , fromIntegral $ fromEnum fPrecision
-         , fromIntegral cdfSize
-         ]
-     OfInterCDF ->
-       (,)
-       ["average", "CoV", "min", "max", "stddev", "range", "precision", "size"]
-       (\Field{..} ->
-        cdfArity
-         (error "Cannot do inter-CDF statistics on plain CDFs")
-         (\CDF{cdfAverage=cdfAvg@CDF{cdfRange=Interval minAvg maxAvg,..}} ->
-             let avg = cdfAverageVal cdfAvg & toDouble in
-             [ avg
-             , cdfStddev / avg
-             , toDouble minAvg
-             , toDouble maxAvg
-             , cdfStddev
-             , toDouble $ maxAvg - minAvg
-             , fromIntegral $ fromEnum fPrecision
-             , fromIntegral cdfSize
-             ]))
+  (:[]) . ("",) . renderAsOrg $ mkReportProps a fieldSelr aspect _centileSelr rc x
 
 renderAnalysisCDFs a fieldSelr _c2a centiSelr rc@RenderConfig{rcFormat=AsPretty} x =
   (:[]) . ("",) $
@@ -520,6 +473,71 @@ renderAnalysisCDFs a fieldSelr _c2a centiSelr rc@RenderConfig{rcFormat=AsPretty}
    -- populationIndices = [1..maxPopulationSize]
    -- maxPopulationSize :: Int
    -- maxPopulationSize = last . sort $ mapSomeFieldCDF cdfSize x . fSelect <$> cdfFields @a @p
+
+mkReportProps :: forall a p. (CDFFields a p, KnownCDF p) => Anchor -> (Field DSelect p a -> Bool) -> CDF2Aspect -> Maybe [Centile] -> RenderConfig -> a p -> Table
+mkReportProps a fieldSelr aspect _centileSelr rc x =
+  Props
+  { oProps = renderAnchorOrgProperties rc a
+  , oConstants = []
+  , oBody = (:[]) $
+    Table
+    { tColHeaders     = fst (hdrsProjs @Integer) -- This is crazy.
+    , tExtended       = True
+    , tApexHeader     = Just "metric"
+    , tColumns        = transpose $
+                        fields' <&>
+                        fmap (formatDouble W6)
+                        . mapFieldWithKey x (snd hdrsProjs)
+    , tRowHeaders     = fields' <&> (\Field{..} ->
+                                       fShortDesc <> ", " <> renderUnit fUnit)
+    , tSummaryHeaders = []
+    , tSummaryValues  = []
+    , tFormula = []
+    , tConstants = [("nSamples",
+                     fields' <&> mapField x (formatInt W4 . cdfSize) & head)]
+    }
+  }
+ where
+   fields' :: [Field DSelect p a]
+   fields' = filter fieldSelr cdfFields
+
+   hdrsProjs :: forall v. (Divisible v) => ([Text], Field DSelect p a -> CDF p v -> [Double])
+   hdrsProjs = aspectColHeadersAndProjections aspect
+
+   aspectColHeadersAndProjections :: forall v. (Divisible v)
+                                  => CDF2Aspect -> ([Text], Field DSelect p a -> CDF p v -> [Double])
+   aspectColHeadersAndProjections = \case
+     OfOverallDataset ->
+       (,)
+       ["average", "CoV", "min", "max", "stddev", "range", "precision", "size"]
+       \Field{..} c@CDF{cdfRange=Interval cdfMin cdfMax, ..} ->
+         let avg = cdfAverageVal c & toDouble in
+         [ avg
+         , cdfStddev / avg
+         , fromRational . toRational $ cdfMin
+         , fromRational . toRational $ cdfMax
+         , cdfStddev
+         , fromRational . toRational $ cdfMax - cdfMin
+         , fromIntegral $ fromEnum fPrecision
+         , fromIntegral cdfSize
+         ]
+     OfInterCDF ->
+       (,)
+       ["average", "CoV", "min", "max", "stddev", "range", "precision", "size"]
+       (\Field{..} ->
+        cdfArity
+         (error "Cannot do inter-CDF statistics on plain CDFs")
+         (\CDF{cdfAverage=cdfAvg@CDF{cdfRange=Interval minAvg maxAvg,..}} ->
+             let avg = cdfAverageVal cdfAvg & toDouble in
+             [ avg
+             , cdfStddev / avg
+             , toDouble minAvg
+             , toDouble maxAvg
+             , cdfStddev
+             , toDouble $ maxAvg - minAvg
+             , fromIntegral $ fromEnum fPrecision
+             , fromIntegral cdfSize
+             ]))
 
 --
 -- Rendering mini-lib

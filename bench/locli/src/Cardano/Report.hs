@@ -3,13 +3,15 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Cardano.Report
   ( module Cardano.Report
   )
 where
 
-import Cardano.Prelude
+import Cardano.Prelude hiding (head)
 
 import Data.Aeson.Encode.Pretty qualified as AEP
 import Data.ByteString      qualified as BS
@@ -24,11 +26,12 @@ import System.Environment (lookupEnv)
 import Text.EDE hiding (Id)
 
 import Data.CDF
-import Data.Tuple.Extra (fst3)
+import Data.Tuple.Extra (fst3, snd3, thd3)
+import Cardano.Render
+import Cardano.Table
 import Cardano.Util
 import Cardano.Analysis.API
 import Cardano.Analysis.Summary
-
 
 newtype Author   = Author   { unAuthor   :: Text } deriving newtype (FromJSON, ToJSON)
 newtype ShortId  = ShortId  { unShortId  :: Text } deriving newtype (FromJSON, ToJSON)
@@ -106,28 +109,36 @@ data Section where
     , sTitle     :: !Text
     } -> Section
 
-summaryReportSection :: Summary f -> Section
-summaryReportSection summ =
-  STable summ (ISel @SummaryOne $ iFields sumFieldsReport) "Parameter" "Value"   "summary" "summary.org"
+formatSuffix :: RenderFormat -> Text
+formatSuffix AsOrg = "org"
+formatSuffix AsLaTeX = "latex"
+formatSuffix _ = "txt"
+
+summaryReportSection :: RenderFormat -> Summary f -> Section
+summaryReportSection rf summ =
+  STable summ (ISel @SummaryOne $ iFields sumFieldsReport) "Parameter" "Value"   "summary"
+    ("summary." <> formatSuffix rf)
     "Overall run parameters"
 
-analysesReportSections :: MachPerf (CDF I) -> BlockProp f -> [Section]
-analysesReportSections mp bp =
-  [ STable mp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf" "clusterperf.report.org"
+analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [Section]
+analysesReportSections rf mp bp =
+  [ STable mp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf" ("clusterperf.report." <> ext)
     "Resource Usage"
 
-  , STable bp (DSel @BlockProp $ dFields bpFieldsControl)  "metric"  "average" "control" "blockprop.control.org"
+  , STable bp (DSel @BlockProp $ dFields bpFieldsControl)  "metric"  "average" "control" ("blockprop.control." <> ext)
     "Anomaly control"
 
-  , STable bp (DSel @BlockProp $ dFields bpFieldsForger)   "metric"  "average"   "forge" "blockprop.forger.org"
+  , STable bp (DSel @BlockProp $ dFields bpFieldsForger)   "metric"  "average"   "forge" ("blockprop.forger." <> ext)
     "Forging"
 
-  , STable bp (DSel @BlockProp $ dFields bpFieldsPeers)    "metric"  "average"   "peers" "blockprop.peers.org"
+  , STable bp (DSel @BlockProp $ dFields bpFieldsPeers)    "metric"  "average"   "peers" ("blockprop.peers." <> ext)
     "Individual peer propagation"
 
-  , STable bp (DSel @BlockProp $ dFields bpFieldsEndToEnd) "metric"  "average" "end2end" "blockprop.endtoend.org"
+  , STable bp (DSel @BlockProp $ dFields bpFieldsEndToEnd) "metric"  "average" "end2end" ("blockprop.endtoend." <> ext)
     "End-to-end propagation"
   ]
+  where
+    ext = formatSuffix rf
 
 --
 -- Representation of a run, structured for template generator's needs.
@@ -212,6 +223,133 @@ instance ToJSON TmplSection where
                                               ("angles", angles)]))
     ]
 
+generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
+          -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
+          -- The result tuple is: summary, resource, anomaly, forging, peers
+          -> IO (Text, Text, Text, Text, Text, Text)
+generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
+  ctx <- getReport metas . ciVersion . getComponent "cardano-node"
+                                     . trManifest $ last restTmpls
+  time <- getCurrentTime
+  let anchor :: Anchor
+      anchor =
+          Anchor {
+              aRuns = getName summ : map (\(SomeSummary ss, _, _) -> getName ss) rest
+            , aFilters = ([], [])
+            , aSlots = Nothing
+            , aBlocks = Nothing
+            , aVersion = getLocliVersion
+            , aWhen = time
+          }
+      -- FIXME: normalise the run names properly
+      getName :: Summary _con -> Text
+      getName Summary {sumMeta=Metadata{..}}
+         = case getComponent "cardano-node" manifest of
+              ComponentInfo {ciVersion=Version{..},..}
+                 -> unVersion <> maybe "" (("-"<>) . unBranch) ciBranch
+      -- FIXME: Authors should have "\\and" interspersed between them in LaTeX.
+      --        As ReportMeta now stands, rmAuthor understands just one author.
+      --        Plutus vs. Value workloads need to be distinguished, too.
+      titlingText = unlines
+        . map latexFixup
+        $ [ "\\def\\locliauthor{" <> unAuthor (rmAuthor ctx) <> "}"
+          , "\\def\\loclititle{Value Workload for " <> unTag (rmTag ctx) <> "}"
+          , "\\def\\loclidate{" <> rmDate ctx <> "}"
+          ]
+      mkTable :: [Int] -> [Field select con functor] -> [[Double]] -> Table
+      mkTable sizes fields rows
+        = Table {
+             tColHeaders
+                 = let h : t = aRuns anchor
+                    -- hex escape sequence for majuscule Greek delta
+                    in h : concatMap (\run -> [run, "\x394", "\x394%"]) t
+          ,  tColumns        = map (map $ formatDouble W6) rows
+          ,  tExtended       = False
+          ,  tApexHeader     = Nothing
+          ,  tRowHeaders     = map fShortDesc fields
+          ,  tSummaryHeaders = []
+          ,  tSummaryValues  = []
+          ,  tFormula        = []
+          -- FIXME: This doesn't match the EDE output.
+          ,  tConstants      = [("nSamples", formatInt W4 $ head sizes)]
+          }
+
+  pure    $ ( titlingText
+            , unlines $ renderSummary renderConfig anchor
+                                  (iFields sumFieldsReport) summ
+            , unlines . renderAsLaTeX $ mkTable (map head resourceSamples) resourceFields resourceRows
+            , unlines . renderAsLaTeX $ mkTable (map head anomalySamples)  anomalyFields  anomalyRows
+            , unlines . renderAsLaTeX $ mkTable (map head forgingSamples)  forgingFields  forgingRows
+            , unlines . renderAsLaTeX $ mkTable (map head peersSamples)    peersFields    peersRows
+            )
+  where
+   metas :: [Metadata]
+   metas = sumMeta summ : fmap (\(SomeSummary ss, _, _) -> sumMeta ss) rest
+   restTmpls = fmap ((\(SomeSummary ss) -> liftTmplRun ss) . fst3) rest
+   renderConfig =
+     RenderConfig {
+       rcFormat = AsLaTeX
+     , rcDateVerMetadata = False
+     , rcRunMetadata = False
+     }
+   anomalyFields, forgingFields, peersFields :: [Field DSelect _blkt' BlockProp]
+   anomalyFields  = filterFields $ dFields bpFieldsControl
+   forgingFields  = filterFields $ dFields bpFieldsForger
+   peersFields    = filterFields $ dFields bpFieldsPeers
+   resourceFields :: [Field DSelect cpt MachPerf]
+   resourceFields = filterFields $ dFields mtFieldsReport
+
+   mapBlkFields :: [FieldName] -> SomeBlockProp -> [Double]
+   mapBlkFields fields (SomeBlockProp (bp' :: BlockProp _bpt'))
+     = [ mapField bp' cdfAverageVal f | f <- filterFields $ dFields fields ]
+   anomalyMapFields, forgingMapFields, peersMapFields :: SomeBlockProp -> [Double]
+   anomalyMapFields = mapBlkFields bpFieldsControl
+   forgingMapFields = mapBlkFields bpFieldsForger
+   peersMapFields   = mapBlkFields bpFieldsPeers
+   resourceMapFields :: MachPerf cpt -> [Double]
+   resourceMapFields cp'
+     = [ mapField cp' cdfAverageVal f | f <- resourceFields ]
+
+   mapBlkSizes :: [FieldName] -> SomeBlockProp -> [Int]
+   mapBlkSizes fields (SomeBlockProp (bp' :: BlockProp _bpt'))
+     = [ mapField bp' cdfSize f | f <- filterFields $ dFields fields ]
+   anomalySamples, forgingSamples, peersSamples, resourceSamples :: [[Int]]
+   anomalySamples  = map (mapBlkSizes bpFieldsControl) $ SomeBlockProp bp : map thd3 rest
+   forgingSamples  = map (mapBlkSizes bpFieldsForger)  $ SomeBlockProp bp : map thd3 rest
+   peersSamples    = map (mapBlkSizes bpFieldsPeers)   $ SomeBlockProp bp : map thd3 rest
+   resourceSamples = map (\c -> [mapField c cdfSize f | f <- resourceFields]) $ cp : map snd3 rest
+
+   anomalyBaseline, forgingBaseline, peersBaseline, resourceBaseline :: [Double]
+   anomalyBaseline  = anomalyMapFields  $ SomeBlockProp bp
+   forgingBaseline  = forgingMapFields  $ SomeBlockProp bp
+   peersBaseline    = peersMapFields    $ SomeBlockProp bp
+   resourceBaseline = resourceMapFields $               cp
+
+   -- The innermost tuple is a chunk of a row corresponding to a single run.
+   -- Before transpose, the inner list corresponds to fields / rows varying.
+   -- Before transpose, the outer list corresponds to runs varying.
+   mkDelta :: Double -> Double -> (Double, Double, Double)
+   mkDelta x y = (y, y - x, 100 * (y - x) / x)
+   anomalyMkDeltas, forgingMkDeltas, peersMkDeltas :: SomeBlockProp -> [(Double, Double, Double)]
+   anomalyMkDeltas  = zipWith mkDelta anomalyBaseline  . anomalyMapFields
+   forgingMkDeltas = zipWith mkDelta forgingBaseline . forgingMapFields
+   peersMkDeltas   = zipWith mkDelta peersBaseline   . peersMapFields
+   resourceMkDeltas :: MachPerf cpt -> [(Double, Double, Double)]
+   resourceMkDeltas = zipWith mkDelta resourceBaseline . resourceMapFields
+
+   mkRows :: [Double] -> ((SomeSummary, ClusterPerf, SomeBlockProp) -> [(Double, Double, Double)]) -> [[Double]]
+   mkRows baseline project
+                    = (baseline :)
+                    . transpose
+                    . map (concatMap $ \(u, v, w) -> [u, v, w])
+                    . transpose
+                    $ map project rest
+   anomalyRows, forgingRows, peersRows, resourceRows :: [[Double]]
+   anomalyRows      = mkRows anomalyBaseline  $ anomalyMkDeltas  . thd3
+   forgingRows      = mkRows forgingBaseline  $ forgingMkDeltas  . thd3
+   peersRows        = mkRows peersBaseline    $ peersMkDeltas    . thd3
+   resourceRows     = mkRows resourceBaseline $ resourceMkDeltas . snd3
+
 generate :: InputDir -> Maybe TextInputFile
          -> (SomeSummary, ClusterPerf, SomeBlockProp) -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
          -> IO (ByteString, ByteString, Text)
@@ -238,11 +376,25 @@ generate (InputDir ede) mReport (SomeSummary summ, cp, SomeBlockProp bp) rest = 
      [ "report"     .= rc
      , "base"       .= b
      , "runs"       .= rs
-     , "summary"    .= liftTmplSection (summaryReportSection summ)
-     , "analyses"   .= (liftTmplSection <$> analysesReportSections cp bp)
+     , "summary"    .= liftTmplSection (summaryReportSection AsOrg summ)
+     , "analyses"   .= (liftTmplSection <$> analysesReportSections AsOrg cp bp)
      , "dictionary" .= metricDictionary
      , "charts"     .=
-       ((dClusterPerf metricDictionary & onlyKeys
+       ((dClusterPerf metricDictionary & onlyKeys clusterPerfKeys)
+        <>
+        (dBlockProp   metricDictionary & onlyKeys blockPropKeys))
+     ]
+
+onlyKeys :: [Text] -> Map.Map Text DictEntry -> [DictEntry]
+onlyKeys ks m =
+  ks <&>
+     \case
+       (Nothing, k) -> error $ "Report.generate:  missing metric: " <> show k
+       (Just x, _) -> x
+     . (flip Map.lookup m &&& identity)
+
+blockPropKeys, clusterPerfKeys :: [Text]
+clusterPerfKeys =
           [ "CentiCpu"
           , "CentiGC"
           , "CentiMut"
@@ -263,9 +415,9 @@ generate (InputDir ede) mReport (SomeSummary summ, cp, SomeBlockProp bp) rest = 
           , "cdfBlockGap"
           , "cdfSpanLensCpu"
           , "cdfSpanLensCpuEpoch"
-          ])
-        <>
-        (dBlockProp   metricDictionary & onlyKeys
+          ]
+
+blockPropKeys =
           [ "cdfForgerLead"
           , "cdfForgerTicked"
           , "cdfForgerMemSnap"
@@ -278,13 +430,4 @@ generate (InputDir ede) mReport (SomeSummary summ, cp, SomeBlockProp bp) rest = 
           , "cdf0.80"
           , "cdf0.90"
           , "cdf0.96"
-          ]))
-     ]
-
-   onlyKeys :: [Text] -> Map.Map Text DictEntry -> [DictEntry]
-   onlyKeys ks m =
-     ks <&>
-     \case
-       (Nothing, k) -> error $ "Report.generate:  missing metric: " <> show k
-       (Just x, _) -> x
-     . (flip Map.lookup m &&& identity)
+          ]

@@ -89,7 +89,7 @@ analyse_default_op='standard'
 analyse() {
 local sargs=()
 local arg_filters=() filter_exprs=() unfiltered=
-local dump_logobjects= dump_machviews= dump_chain= dump_slots_raw= dump_slots= without_datever_meta= pdf=
+local dump_logobjects= dump_machviews= dump_chain= dump_slots_raw= dump_slots= without_datever_meta= pdf= latex=
 local multi_aspect='--inter-cdf' rtsmode=
 local locli_render=() locli_timeline=()
 locli_args=()
@@ -101,7 +101,9 @@ fi
 
 progress "analyse" "args:  $(yellow $*)"
 while test $# -gt 0
-do case "$1" in
+do
+    echo "analyse: arg parse loop start $# args left"
+    case "$1" in
        --filters | -f )           sargs+=($1 "$2"); analysis_add_filters "--filters" 'arg_filters' "unitary,$2"; shift;;
        --filter-expr | -fex )     sargs+=($1 "$2"); filter_exprs+=($2); shift;;
        --filter-block-expr | -fbex ) sargs+=($1 "$2"); filter_exprs+=('{ "tag":"CBlock" , "contents": '"$2"'}'); shift;;
@@ -126,7 +128,14 @@ do case "$1" in
        --without-datever-meta )    sargs+=($1);    locli_render+=($1); without_datever_meta='true';;
        --without-run-meta )        sargs+=($1);    locli_render+=($1);;
        --trace )                   sargs+=($1);    set -x;;
-       * ) break;; esac; shift; done
+       --latex )                   sargs+=($1);
+                                   latex='yes-please';
+	                           echo "analyse: found latex";;
+       * ) break;;
+    esac;
+    shift;
+    echo "analyse: arg parse end loop $# args left"
+done
 
 local op=${1:-$analyse_default_op}; if test $# != 0; then shift; fi
 
@@ -138,6 +147,7 @@ fi
 
 verbose "analyse" "op:    $(yellow $op)"
 verbose "analyse" "sargs: $(yellow ${sargs[*]})"
+echo "analyse: about to start op case stmt"
 
 case "$op" in
     # 'read-mach-views' "${logs[@]/#/--log }"
@@ -154,6 +164,14 @@ case "$op" in
         local run=${1:?$usage}; shift
         local dir=$(run compute-path "$run")
 
+        # Where is the relative path? Open-coding . is not good.
+        # Some kind of directory prefix variable should be used
+        # instead of this.
+        env TEXINPUTS=".:$dir/analysis:${TEXINPUTS:-""}" \
+                xelatex -output-directory "$dir/analysis/" \
+                        ./nix/workbench/latex/report.latex
+
+	# This is where we hope to use the directly-generated LaTeX.
         progress "analyse | report" "rendering report:  $(white $run)"
         local emacs_args=(
             --batch
@@ -204,6 +222,7 @@ EOF
             compute-multi-clusterperf
             multi-clusterperf-json
             multi-clusterperf-gnuplot
+            multi-clusterperf-latex
             multi-clusterperf-org
             multi-clusterperf-report
             multi-clusterperf-full
@@ -211,6 +230,7 @@ EOF
             read-propagations
             compute-multi-propagation
             multi-propagation-json
+            multi-propagation-latex
             multi-propagation-org
             multi-propagation-{control,forger,peers,endtoend}
             multi-propagation-gnuplot
@@ -219,6 +239,7 @@ EOF
             read-summaries
             compute-multi-summary
             multi-summary-json
+            multi-summary-latex
             multi-summary-report
             write-context
         )
@@ -246,24 +267,27 @@ EOF
             timeline-slots
 
             compute-propagation
+            propagation-gnuplot
             propagation-json
+            propagation-latex
             propagation-org
             propagation-{control,forger,peers,endtoend}
-            propagation-gnuplot
             propagation-full
 
             compute-machperf
             render-machperf
 
             compute-clusterperf
-            clusterperf-json
             clusterperf-gnuplot
+            clusterperf-json
+            clusterperf-latex
             clusterperf-org
             clusterperf-report
             clusterperf-full
 
             compute-summary
             summary-json
+            summary-latex
             summary-report
          )
         verbose "analyse" "$(white full), calling script:  $(colorise ${script[*]})"
@@ -288,10 +312,11 @@ EOF
             chain-timeline
 
             compute-propagation
+            propagation-gnuplot
             propagation-json
+            propagation-latex
             propagation-org
             propagation-{control,forger,peers,endtoend}
-            propagation-gnuplot
             propagation-full
          )
         verbose "analyse" "$(white full), calling script:  $(colorise ${script[*]})"
@@ -313,6 +338,7 @@ EOF
             compute-clusterperf
             clusterperf-json
             clusterperf-gnuplot
+            clusterperf-latex
             clusterperf-org
             clusterperf-report
             clusterperf-full
@@ -422,30 +448,39 @@ EOF
         v9=("${v8[@]/#filter-slots/         'filter-slots'                   ${filters[@]}}")
         va=("${v9[@]/#timeline-slots/       'timeline-slots'                                                   ${locli_render[*]} ${locli_timeline[*]} }")
         vb=("${va[@]/#propagation-json/     'render-propagation'       --json \"$adir\"/blockprop.json                                  --full }")
-        vc=("${vb[@]/#propagation-org/      'render-propagation'        --org \"$adir\"/blockprop.org          ${locli_render[*]}       --full }")
-        vd=("${vc[@]/#propagation-control/  'render-propagation' --org-report \"$adir\"/blockprop.control.org  ${locli_render[*]}    --control }")
-        ve=("${vd[@]/#propagation-forger/   'render-propagation' --org-report \"$adir\"/blockprop.forger.org   ${locli_render[*]}     --forger }")
-        vf=("${ve[@]/#propagation-peers/    'render-propagation' --org-report \"$adir\"/blockprop.peers.org    ${locli_render[*]}      --peers }")
-        vg=("${vf[@]/#propagation-endtoend/ 'render-propagation' --org-report \"$adir\"/blockprop.endtoend.org ${locli_render[*]} --end-to-end }")
-        vh=("${vg[@]/#propagation-gnuplot/  'render-propagation'    --gnuplot \"$adir\"/cdf/%s.cdf             ${locli_render[*]}       --full }")
-        vi=("${vh[@]/#propagation-full/     'render-propagation'     --pretty \"$adir\"/blockprop-full.txt     ${locli_render[*]}       --full }")
-        vj=("${vi[@]/#clusterperf-json/     'render-clusterperf'       --json \"$adir\"/clusterperf.json                                --full }")
-        vk=("${vj[@]/#clusterperf-org/      'render-clusterperf'        --org \"$adir\"/clusterperf.org        ${locli_render[*]}       --full }")
-        vl=("${vk[@]/#clusterperf-report/   'render-clusterperf' --org-report \"$adir\"/clusterperf.report.org ${locli_render[*]}     --report }")
-        vm=("${vl[@]/#clusterperf-gnuplot/  'render-clusterperf'    --gnuplot \"$adir\"/cdf/%s.cdf             ${locli_render[*]}       --full }")
-        vn=("${vm[@]/#clusterperf-full/     'render-clusterperf'     --pretty \"$adir\"/clusterperf-full.txt   ${locli_render[*]}       --full }")
-        vo=("${vn[@]/#read-clusterperfs/    'read-clusterperfs' --clusterperf \"$adir\"/clusterperf.json }")
-        vp=("${vo[@]/#read-propagations/    'read-propagations'        --prop \"$adir\"/blockprop.json }")
-        vq=("${vp[@]/#read-summaries/       'read-summaries'        --summary \"$adir\"/summary.json }")
-        vr=("${vq[@]/#summary-json/         'render-summary'           --json \"$adir\"/summary.json }")
-        vs=("${vr[@]/#summary-report/       'render-summary'     --org-report \"$adir\"/summary.org            ${locli_render[*]}}")
-        vt=("${vs[@]/#hash-timeline/        'hash-timeline'        --timeline \"$adir\"/hash-timeline.json }")
+        vc=("${vb[@]/#propagation-latex/    'render-propagation'        --latex \"$adir\"/blockprop.latex          ${locli_render[*]}       --full }")
+        vd=("${vc[@]/#propagation-org/      'render-propagation'        --org \"$adir\"/blockprop.org          ${locli_render[*]}       --full }")
+        ve=("${vd[@]/#propagation-control/  'render-propagation' --org-report \"$adir\"/blockprop.control.org  ${locli_render[*]}    --control }")
+        vf=("${ve[@]/#propagation-forger/   'render-propagation' --org-report \"$adir\"/blockprop.forger.org   ${locli_render[*]}     --forger }")
+        vg=("${vf[@]/#propagation-peers/    'render-propagation' --org-report \"$adir\"/blockprop.peers.org    ${locli_render[*]}      --peers }")
+        vh=("${vg[@]/#propagation-endtoend/ 'render-propagation' --org-report \"$adir\"/blockprop.endtoend.org ${locli_render[*]} --end-to-end }")
+        vi=("${vh[@]/#propagation-gnuplot/  'render-propagation'    --gnuplot \"$adir\"/cdf/%s.cdf             ${locli_render[*]}       --full }")
+        vj=("${vi[@]/#propagation-full/     'render-propagation'     --pretty \"$adir\"/blockprop-full.txt     ${locli_render[*]}       --full }")
+        vk=("${vj[@]/#clusterperf-json/     'render-clusterperf'       --json \"$adir\"/clusterperf.json                                --full }")
+        vl=("${vk[@]/#clusterperf-latex/    'render-clusterperf'       --latex \"$adir\"/clusterperf.latex                                --full }")
+        vm=("${vl[@]/#clusterperf-org/      'render-clusterperf'        --org \"$adir\"/clusterperf.org        ${locli_render[*]}       --full }")
+        vn=("${vm[@]/#clusterperf-report/   'render-clusterperf' --org-report \"$adir\"/clusterperf.report.org ${locli_render[*]}     --report }")
+        vo=("${vn[@]/#clusterperf-gnuplot/  'render-clusterperf'    --gnuplot \"$adir\"/cdf/%s.cdf             ${locli_render[*]}       --full }")
+        vp=("${vo[@]/#clusterperf-full/     'render-clusterperf'     --pretty \"$adir\"/clusterperf-full.txt   ${locli_render[*]}       --full }")
+        vq=("${vp[@]/#read-clusterperfs/    'read-clusterperfs' --clusterperf \"$adir\"/clusterperf.json }")
+        vr=("${vq[@]/#read-propagations/    'read-propagations'        --prop \"$adir\"/blockprop.json }")
+        vs=("${vr[@]/#read-summaries/       'read-summaries'        --summary \"$adir\"/summary.json }")
+        vt=("${vs[@]/#summary-json/         'render-summary'           --json \"$adir\"/summary.json }")
+        vu=("${vt[@]/#summary-latex/        'render-summary'           --latex \"$adir\"/summary.latex }")
+        vv=("${vu[@]/#summary-report/       'render-summary'     --org-report \"$adir\"/summary.org            ${locli_render[*]}}")
+        vw=("${vv[@]/#hash-timeline/        'hash-timeline'        --timeline \"$adir\"/hash-timeline.json }")
         local ops_final=()
-        for v in "${vt[@]}"
+        for v in "${vw[@]}"
         do eval ops_final+=($v); done
 
+	echo "analyse call case: about to call_locli"
         call_locli "$rtsmode" "${ops_final[@]}"
+	locli_ret=$?
+	if [ $locli_ret -ne 0 ]
+	then echo "analyse call case: call_locli failed with retcode $locli_ret"
+	fi
 
+	echo "analyse call case: generating analysis_jsons"
         local analysis_jsons=($(ls $adir/*.json |
                                     fgrep -v -e '.flt.json'             \
                                              -e '.logobjs.json'         \
@@ -456,10 +491,12 @@ EOF
                                              -e 'prof.json'             \
                                              -e 'tracefreq.json'
               ))
+	echo "analyse call case: prettifying JSON data"
         progress "analyse" "prettifying JSON data:  ${#analysis_jsons[*]} files"
         verbose  "analyse" "prettifying JSON data:  ${analysis_jsons[*]}"
         json_compact_prettify "${analysis_jsons[@]}"
 
+	echo "analyse call case: run set-identifier"
         if test -n "$ident"
         then run set-identifier "$run" "$ident"
         fi
@@ -467,6 +504,7 @@ EOF
         ;;
 
     multi-call )
+	echo "analyse multi-call: entering"
         local usage="USAGE: wb analyse $op SUFFIX \"RUN-NAMES..\" OPS.."
 
         local suffix=${1:?$usage}; shift
@@ -499,6 +537,7 @@ EOF
         ln -sf "$run" "$runs/current"
         progress "analysis | multi-call" "output $(yellow $run), inputs: $(white ${runs[*]})"
 
+	echo "analysis multi-call: about to examine arguments $@"
         local v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf vg vh vi vj vk vl vm vn vo
         v0=("$@")
         v1=(${v0[*]/#read-clusterperfs/ 'read-clusterperfs' ${cperfs[*]}    })
@@ -506,37 +545,66 @@ EOF
         v3=(${v2[@]/#read-summaries/    'read-summaries'    ${summaries[*]} })
         v4=(${v3[*]/#multi-clusterperf-json/ 'render-multi-clusterperf' --json $adir/'clusterperf.json' --full $multi_aspect })
         v5=(${v4[*]/#multi-clusterperf-org/     'render-multi-clusterperf' --org $adir/'clusterperf.org' --full $multi_aspect })
-        v6=(${v5[*]/#multi-clusterperf-report/  'render-multi-clusterperf' --org-report $adir/'clusterperf.report.org' --report $multi_aspect })
-        v7=(${v6[*]/#multi-clusterperf-gnuplot/ 'render-multi-clusterperf' --gnuplot $adir/cdf/'%s.cdf' --full $multi_aspect })
-        v8=(${v7[*]/#multi-clusterperf-full/    'render-multi-clusterperf' --pretty $adir/'clusterperf-full.txt' --full $multi_aspect })
-        v9=(${v8[*]/#multi-propagation-json/     'render-multi-propagation' --json $adir/'blockprop.json' --full $multi_aspect })
-        va=(${v9[*]/#multi-propagation-org/      'render-multi-propagation' --org $adir/'blockprop.org' --full $multi_aspect })
-        vb=(${va[*]/#multi-propagation-control/  'render-multi-propagation' --org-report $adir/'blockprop.control.org' --control $multi_aspect })
-        vc=(${vb[*]/#multi-propagation-forger/   'render-multi-propagation' --org-report $adir/'blockprop.forger.org' --forger $multi_aspect })
-        vd=(${vc[*]/#multi-propagation-peers/    'render-multi-propagation' --org-report $adir/'blockprop.peers.org' --peers $multi_aspect })
-        ve=(${vd[*]/#multi-propagation-endtoend/ 'render-multi-propagation' --org-report $adir/'blockprop.endtoend.org' --end-to-end $multi_aspect })
-        vf=(${ve[*]/#multi-propagation-gnuplot/  'render-multi-propagation' --gnuplot $adir/cdf/'%s.cdf' --full $multi_aspect })
-        vg=(${vf[*]/#multi-propagation-full/     'render-multi-propagation' --pretty $adir/'blockprop-full.txt' --full $multi_aspect })
-        vh=(${vg[*]/#compare/ 'compare' --ede nix/workbench/ede --report $adir/report-$run.org ${compares[*]} })
-        vi=(${vh[*]/#update/  'compare' --ede nix/workbench/ede --report $adir/report-$run.org ${compares[*]} --template $adir/report-$run.ede })
-        vj=(${vi[*]/#multi-summary-json/            'render-multi-summary' --json $adir/'summary.json' })
-        vk=(${vj[*]/#multi-summary-report/          'render-multi-summary' --org-report $adir/'summary.org' })
-        vl=(${vk[@]/#write-context/                 'write-meta-genesis'   --run-metafile    $dir/meta.json --shelley-genesis $dir/genesis-shelley.json })
-        local ops_final=(${vl[*]})
+        v6=(${v5[*]/#multi-clusterperf-latex/     'render-multi-clusterperf' --latex $adir/'clusterperf.latex' --full $multi_aspect })
+        v7=(${v6[*]/#multi-clusterperf-report/  'render-multi-clusterperf' --org-report $adir/'clusterperf.report.org' --report $multi_aspect })
+        v8=(${v7[*]/#multi-clusterperf-gnuplot/ 'render-multi-clusterperf' --gnuplot $adir/cdf/'%s.cdf' --full $multi_aspect })
+        v9=(${v8[*]/#multi-clusterperf-full/    'render-multi-clusterperf' --pretty $adir/'clusterperf-full.txt' --full $multi_aspect })
+        va=(${v9[*]/#multi-propagation-json/     'render-multi-propagation' --json $adir/'blockprop.json' --full $multi_aspect })
+        vb=(${va[*]/#multi-propagation-org/      'render-multi-propagation' --org $adir/'blockprop.org' --full $multi_aspect })
+        vc=(${vb[*]/#multi-propagation-latex/      'render-multi-propagation' --latex $adir/'blockprop.latex' --full $multi_aspect })
+        vd=(${vc[*]/#multi-propagation-control/  'render-multi-propagation' --org-report $adir/'blockprop.control.org' --control $multi_aspect })
+        ve=(${vd[*]/#multi-propagation-forger/   'render-multi-propagation' --org-report $adir/'blockprop.forger.org' --forger $multi_aspect })
+        vf=(${ve[*]/#multi-propagation-peers/    'render-multi-propagation' --org-report $adir/'blockprop.peers.org' --peers $multi_aspect })
+        vg=(${vf[*]/#multi-propagation-endtoend/ 'render-multi-propagation' --org-report $adir/'blockprop.endtoend.org' --end-to-end $multi_aspect })
+        vh=(${vg[*]/#multi-propagation-gnuplot/  'render-multi-propagation' --gnuplot $adir/cdf/'%s.cdf' --full $multi_aspect })
+        vi=(${vh[*]/#multi-propagation-full/     'render-multi-propagation' --pretty $adir/'blockprop-full.txt' --full $multi_aspect })
+	echo "analyse multi-call: about to consider latex vs. ede"
+	echo "analyse multi-call: considering sargs=${sargs[*]}"
+	echo "analyse multi-call: considering vi=${vi[*]}"
+	if [[ "$latex" == "yes-please" ]]
+	then
+            echo "analyse multi-call: found --latex"
+            vj=(${vi[*]/#compare/ 'compare' --latex nix/workbench/latex --report $adir/report-$run.latex ${compares[*]} })
+            vk=(${vj[*]/#update/  'compare' --latex nix/workbench/latex --report $adir/report-$run.latex ${compares[*]} --template $adir/report-$run.ede })
+            echo "analyse multi-call: finished --latex case"
+        else
+	    echo "analyse multi-call: found or defaulting to ede"
+	    for word in ${vi[@]}
+            do
+                echo "analyse multi-call: found latex in ede case as $word"
+            done
+            vj=(${vi[*]/#compare/ 'compare' --ede nix/workbench/ede --report $adir/report-$run.org ${compares[*]} })
+            vk=(${vj[*]/#update/  'compare' --ede nix/workbench/ede --report $adir/report-$run.org ${compares[*]} --template $adir/report-$run.ede })
+	    echo "analyse multi-call: finished ede case"
+	fi
+	echo "analyse multi-call: finished considering latex vs. ede"
+        vl=(${vk[*]/#multi-summary-json/            'render-multi-summary' --json $adir/'summary.json' })
+        vm=(${vl[*]/#multi-summary-latex/            'render-multi-summary' --latex $adir/'summary.latex' })
+        vn=(${vm[*]/#multi-summary-report/          'render-multi-summary' --org-report $adir/'summary.org' })
+        vo=(${vn[@]/#write-context/                 'write-meta-genesis'   --run-metafile    $dir/meta.json --shelley-genesis $dir/genesis-shelley.json })
+        local ops_final=(${vo[*]})
 
+	echo "analyse multi-call case: about to call_locli"
         call_locli "$rtsmode" "${ops_final[@]}"
+	locli_ret=$?
+	if [ $locli_ret -ne 0 ]
+	then echo "analyse multi-call case: call_locli failed with retcode $locli_ret"
+	fi
 
+	echo "analyse multi-call case: run setid $run ${idents_uniq[0]}"
         if test ${#idents_uniq[*]} = 1
         then run setid $run ${idents_uniq[0]}
         fi
         progress "report | output" "run:  $(white $run)  $(blue ident:)  $(white ${idents_uniq[*]})"
 
+	echo "analyse multi-call case: analyse pdf"
         if test -n "$pdf"
         then progress "report | pdf" "PDF output requested, running 'em'.."
              analyse pdf $run
         else progress "report | hint" "did you want to pass $(white --pdf) to $(white wb analyse)?"
              progress "report | hint" "you still can feed this run into $(white wb pdf).."
         fi
+	echo "analyse multi-call case: finished case"
         ;;
 
     prepare | prep )
@@ -737,6 +805,7 @@ call_locli() {
     local rtsmode="${1:-hipar}"; shift
     local args=("$@")
 
+    echo "call_locli: entering"
     echo "{ \"rtsmode\": \"$rtsmode\" }"
     case "$rtsmode" in
         serial )locli_args+=(+RTS -N1 -A128M -RTS);;
@@ -745,8 +814,18 @@ call_locli() {
         * )     fail "unknown rtsmode: $rtsmode";;
     esac
 
+    echo "call_locli: about to locli help"
+    locli --help
+    echo "call_locli: about to locli"
     verbose "analysis | locli" "$(with_color reset ${locli_args[@]}) $(colorise ${args[*]})"
     time locli "${locli_args[@]}" "${args[@]}"
+    locli_ret=$?
+    echo "call_locli: returned from locli"
+    if [ $locli_ret -ne 0 ]
+    then echo "call_locli: locli errored with return code $locli_ret"
+    fi
+    echo "call_locli: returning $locli_ret"
+    return $locli_ret
 }
 
 num_jobs="\j"

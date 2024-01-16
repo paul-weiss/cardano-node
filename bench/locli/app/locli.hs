@@ -8,8 +8,7 @@ import           Cardano.TopHandler
 
 
 main :: IO ()
-main = toplevelExceptionHandler $ do
-
-  co <- Opt.customExecParser pref opts
-
-  orDie renderCommandError $ runCommand co
+main = do
+  toplevelExceptionHandler $ do
+    co <- Opt.customExecParser pref opts
+    orDie renderCommandError $ runCommand co

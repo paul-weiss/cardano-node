@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -9,6 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wwarn #-}
@@ -38,7 +40,7 @@ module Data.CDF
   , indexCDF
   , CDFIx (..)
   , KnownCDF (..)
-  , CDFList
+  , CDFList (..)
   , liftCDFVal
   , unliftCDFVal
   , unliftCDFValExtra
@@ -61,6 +63,8 @@ module Data.CDF
 import Prelude ((!!), show)
 import Cardano.Prelude hiding (head, show)
 
+import Data.Aeson (Value (..))
+import Data.Aeson.Types (prependFailure, typeMismatch)
 import Data.SOP.Strict
 import Data.Tuple.Extra (both)
 import Data.Vector qualified as Vec
@@ -72,7 +76,7 @@ import Cardano.Util
 -- | Centile specifier: a fractional in range of [0; 1].
 newtype Centile =
   Centile { unCentile :: Double }
-  deriving (Eq, Show)
+  deriving (Eq, Read, Show)
   deriving newtype (FromJSON, ToJSON, NFData)
 
 renderCentile :: Int -> Centile -> String
@@ -174,7 +178,10 @@ data CDF p a =
   }
   deriving (Functor, Generic)
 
+deriving instance Foldable Interval
 deriving instance (Eq     a, Eq     (p a), Eq     (p Double)) => Eq     (CDF p a)
+deriving instance Foldable p => Foldable (CDF p)
+deriving instance (Read   a, Read   (p a), Read   (p Double)) => Read   (CDF p a)
 deriving instance (Show   a, Show   (p a), Show   (p Double)) => Show   (CDF p a)
 deriving instance (NFData a, NFData (p a), NFData (p Double)) => NFData (CDF p a)
 
@@ -271,9 +278,31 @@ class KnownCDF a where
 instance KnownCDF      I  where cdfIx = CDFI
 instance KnownCDF (CDF I) where cdfIx = CDF2
 
-type family CDFList (f :: Type -> Type) (t :: Type) :: Type where
-  CDFList I       t = t
-  CDFList (CDF I) t = [t]
+data CDFList (f :: Type -> Type) t
+  = CDFListSingleton t
+  | CDFListMultiple [t]
+
+deriving instance Generic (CDFList f t)
+deriving instance (Eq t, Eq (f t), Eq (f [t])) => Eq (CDFList f t)
+deriving instance Foldable f => Foldable (CDFList f)
+deriving instance (NFData t, NFData (f t), NFData (f [t])) => NFData (CDFList f t)
+deriving instance (Read t, Read (f t), Read (f [t])) => Read (CDFList f t)
+deriving instance (Show t, Show (f t), Show (f [t])) => Show (CDFList f t)
+
+instance (FromJSON (f t), FromJSON (f [t]), FromJSON t) => FromJSON (CDFList f t) where
+  parseJSON (Array a) | null a        = pure $ CDFListMultiple []
+                      | length a == 1
+                      = parseJSON (Vec.head a) >>= pure . CDFListSingleton
+                      | otherwise
+                      = Vec.mapM parseJSON a
+                                    >>= pure . CDFListMultiple  . Vec.toList
+  parseJSON o@(Object _) = parseJSON o >>= pure . CDFListSingleton
+  parseJSON invalid =
+    prependFailure "parsing CDFList failed, "
+      (typeMismatch "Array" invalid)
+instance (ToJSON (f t), ToJSON (f [t]), ToJSON t) => ToJSON (CDFList f t) where
+  toJSON (CDFListSingleton t) = toJSON [t]
+  toJSON (CDFListMultiple xs) = toJSON xs
 
 liftCDFVal :: forall a p. Real a => a -> CDFIx p -> p a
 liftCDFVal x = \case
