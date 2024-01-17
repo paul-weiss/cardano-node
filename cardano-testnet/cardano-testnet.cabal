@@ -83,6 +83,7 @@ library
   hs-source-dirs:       src
   exposed-modules:      Cardano.Testnet
                         Parsers.Run
+                        Testnet.Aeson
                         Testnet.Start.Byron
                         Testnet.Start.Types
                         Testnet.Components.Configuration
@@ -177,6 +178,7 @@ test-suite cardano-testnet-test
                         Cardano.Testnet.Test.Misc
 
                         Cardano.Testnet.Test.LedgerEvents.Gov.ProposeNewConstitution
+                        Cardano.Testnet.Test.LedgerEvents.Gov.ProposeNewConstitutionDRep
                         Cardano.Testnet.Test.LedgerEvents.SanityCheck
 
                         Cardano.Testnet.Test.Node.Shutdown
@@ -193,6 +195,7 @@ test-suite cardano-testnet-test
                       , cardano-cli
                       , cardano-crypto-class
                       , cardano-ledger-conway
+                      , cardano-ledger-core
                       , cardano-testnet
                       , containers
                       , directory

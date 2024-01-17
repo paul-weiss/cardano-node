@@ -4,10 +4,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+{-# OPTIONS_GHC -Wno-unused-matches #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
-module Cardano.Testnet.Test.LedgerEvents.Gov.ProposeNewConstitution
-  ( hprop_ledger_events_propose_new_constitution
+module Cardano.Testnet.Test.LedgerEvents.Gov.ProposeNewConstitutionDRep
+  ( hprop_propose_new_constitution_not_enough_delegation
   ) where
+
+import           Testnet.Defaults as Defaults
 
 import           Cardano.Api
 import           Cardano.Api.Shelley
@@ -26,7 +31,6 @@ import qualified Data.Text as Text
 import           Data.Word
 import           GHC.IO.Exception (IOException)
 import           GHC.Stack (HasCallStack, callStack)
-import           Lens.Micro
 import           System.FilePath ((</>))
 
 import           Hedgehog
@@ -35,6 +39,20 @@ import qualified Hedgehog.Extras.Stock.IO.Network.Sprocket as IO
 import qualified Testnet.Process.Cli as P
 import qualified Testnet.Process.Run as H
 
+import           Cardano.Api.Ledger (DRepVotingThresholds (..))
+import           Cardano.Ledger.BaseTypes (UnitInterval, boundRational)
+import           Cardano.Ledger.Conway.Genesis (ConwayGenesis (..))
+import           Cardano.Ledger.Conway.PParams (UpgradeConwayPParams (..), ucppDRepVotingThresholds)
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.KeyMap as Aeson
+import           Data.Functor.Identity (Identity)
+import           Data.Maybe (fromJust)
+import           Data.Ratio ((%))
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TL
+import qualified Hedgehog as H
+import qualified Testnet.Aeson
+import qualified Testnet.Aeson as Aeson
 import           Testnet.Components.SPO
 import qualified Testnet.Property.Utils as H
 import           Testnet.Runtime
@@ -44,11 +62,31 @@ newtype AdditionalCatcher
   = IOE IOException
   deriving Show
 
+-- | Whether the constitution proposition is expected to pass or not in the test
+data ExpectedResult =
+  -- | Constitution is being changed
+  ConstitutionChange
+  -- | Constitution is not changed
+  | ConstitutionUnchanged
 
-hprop_ledger_events_propose_new_constitution :: Property
-hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-new-constitution" $ \tempAbsBasePath' -> do
+-- | Execute me with:
+-- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/ProposeNewConstitutionDRepNotEnoughDelegation/'@
+hprop_propose_new_constitution_not_enough_delegation :: Property
+hprop_propose_new_constitution_not_enough_delegation =
+  hprop_propose_new_constitution ConstitutionUnchanged $ fromJust $ boundRational @UnitInterval (67 % 100)
+
+hprop_propose_new_constitution :: ExpectedResult -> UnitInterval -> Property
+hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integrationRetryWorkspace 2 "propose-new-constitution" $ \tempAbsBasePath' -> do
   -- Start a local test net
   conf@Conf { tempAbsPath } <- H.noteShowM $ mkConf tempAbsBasePath'
+  let
+      pvtFun :: DRepVotingThresholds -> DRepVotingThresholds
+      pvtFun d = d { dvtUpdateToConstitution = dvtUpdateConstitutionRatio }
+      ucppFun :: UpgradeConwayPParams Identity -> UpgradeConwayPParams Identity
+      ucppFun u@UpgradeConwayPParams { ucppDRepVotingThresholds } = u { ucppDRepVotingThresholds = pvtFun ucppDRepVotingThresholds }
+      rewriteConway g@ConwayGenesis { cgUpgradePParams } = g { cgUpgradePParams = ucppFun cgUpgradePParams }
+      conwayGenesis = rewriteConway Defaults.defaultConwayGenesis
+
   let tempAbsPath' = unTmpAbsPath tempAbsPath
       tempBaseAbsPath = makeTmpBaseAbsPath tempAbsPath
 
@@ -69,7 +107,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     , poolNodes
     , wallets
     }
-    <- cardanoTestnetDefault fastTestnetOptions conf
+    <- cardanoTestnet fastTestnetOptions conf Nothing Nothing (Just conwayGenesis)
 
   poolNode1 <- H.headM poolNodes
 
@@ -96,12 +134,14 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
   H.writeFile consitutionFile "dummy constitution data"
   constitutionHash <- H.execCli' execConfig
     [ "conway", "governance"
-    , "hash", "anchor-data", "--file-text", consitutionFile
+    , "hash", "anchor-data"
+    , "--file-text", consitutionFile
     ]
 
   proposalAnchorDataHash <- H.execCli' execConfig
     [ "conway", "governance"
-    , "hash", "anchor-data", "--file-text", proposalAnchorFile
+    , "hash", "anchor-data"
+    , "--file-text", proposalAnchorFile
     ]
 
   let stakeVkeyFp = gov </> "stake.vkey"
@@ -113,18 +153,10 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
                       }
 
   let drepVkeyFp :: Int -> FilePath
-      drepVkeyFp n = gov </> "drep-keys" <>"drep" <> show n <> ".vkey"
+      drepVkeyFp n = tempAbsPath' </> "drep-keys" </> ("drep" <> show n) </> "drep.vkey"
 
       drepSKeyFp :: Int -> FilePath
-      drepSKeyFp n = gov </> "drep-keys" <>"drep" <> show n <> ".skey"
-
-  -- Create DReps -- TODO: Refactor with shelleyKeyGen
-  forM_ [1..3] $ \n -> do
-   H.execCli' execConfig
-     [ "conway", "governance", "drep", "key-gen"
-     , "--verification-key-file", drepVkeyFp n
-     , "--signing-key-file", drepSKeyFp n
-     ]
+      drepSKeyFp n = tempAbsPath' </> "drep-keys" </> ("drep" <> show n) </> "drep.skey"
 
   -- Create Drep registration certificates
   let drepCertFile :: Int -> FilePath
@@ -148,7 +180,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     ]
 
   utxo1Json <- H.leftFailM . H.readJsonFile $ work </> "utxo-1.json"
-  UTxO utxo1 <- H.noteShowM $ decodeEraUTxO sbe utxo1Json
+  UTxO utxo1 <- H.noteShowM $ H.noteShowM $ decodeEraUTxO sbe utxo1Json
   txin1 <- H.noteShow =<< H.headM (Map.keys utxo1)
 
   drepRegTxbodyFp <- H.note $ work </> "drep.registration.txbody"
@@ -210,7 +242,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     ]
 
   utxo2Json <- H.leftFailM . H.readJsonFile $ work </> "utxo-2.json"
-  UTxO utxo2 <- H.noteShowM $ decodeEraUTxO sbe utxo2Json
+  UTxO utxo2 <- H.noteShowM $ H.noteShowM $ decodeEraUTxO sbe utxo2Json
   txin2 <- H.noteShow =<< H.headM (Map.keys utxo2)
 
   void $ H.execCli' execConfig
@@ -241,6 +273,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     [ "transaction", "txid"
     , "--tx-file", txbodySignedFp
     ]
+
   !propSubmittedResult
     <- runExceptT $ handleIOExceptT IOE
                   $ runExceptT $ foldBlocks
@@ -286,11 +319,13 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
    ]
 
   utxo3Json <- H.leftFailM . H.readJsonFile $ work </> "utxo-3.json"
-  UTxO utxo3 <- H.noteShowM $ decodeEraUTxO sbe utxo3Json
+  UTxO utxo3 <- H.noteShowM $ H.noteShowM $ decodeEraUTxO sbe utxo3Json
   txin3 <- H.noteShow =<< H.headM (Map.keys utxo3)
 
   voteTxFp <- H.note $ work </> gov </> "vote.tx"
+  govStateBefore <- H.note $ work </> gov </> "gov-state-before.txt"
   voteTxBodyFp <- H.note $ work </> gov </> "vote.txbody"
+  govStateAfter <- H.note $ work </> gov </> "gov-state-after.txt"
 
   -- Submit votes
   void $ H.execCli' execConfig
@@ -318,32 +353,52 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     , "--out-file", voteTxFp
     ]
 
+  let strToLBS = TL.encodeUtf8 . TL.pack
+
+  -- If we wanted the constitution alone, we would use "conway query constitution"
+  jsonGovStateBeforeValue :: Aeson.Value <- fromJust . Aeson.decode . strToLBS <$> H.execCli' execConfig
+    [ "conway", "query", "gov-state"
+    , "--testnet-magic", show @Int testnetMagic
+    ]
+  H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode jsonGovStateBeforeValue -- TODO Delete me
+  enactStateBefore <- Aeson.assertHasKey "enactState" jsonGovStateBeforeValue
+  constitutionBefore <- Aeson.assertHasKey "constitution" enactStateBefore
+  -- jsonGovStateBefore <- Aeson.assertObject jsonGovStateBeforeValue
+  -- let constitutionBefore = fromJust $ Aeson.lookup "constitution" jsonGovStateBefore
+  -- Testnet.Aeson.assertHasArrayMappingOfLength "proposals" 1 jsonGovStateBefore
+
   void $ H.execCli' execConfig
     [ "conway", "transaction", "submit"
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-file", voteTxFp
     ]
 
-  -- We check that constitution was succcessfully ratified
+  H.threadDelay (2 * cardanoEpochLength) -- Wait 2 epochs, one should suffice, but let's be safe
 
-  !eConstitutionAdopted
-    <- runExceptT $ handleIOExceptT IOE
-                  $ runExceptT $ foldBlocks
-                      (File $ configurationFile testnetRuntime)
-                      (File socketPath)
-                      FullValidation
-                      [] -- Initial accumulator state
-                      (foldBlocksCheckConstitutionWasRatified constitutionHash)
+  -- void $ H.execCli' execConfig
+  --   [ "conway", "query", "gov-state"
+  --   , "--testnet-magic", show @Int testnetMagic
+  --   ]
+  jsonGovStateAfterValue :: Aeson.Value <- fromJust . Aeson.decode . strToLBS <$> H.execCli' execConfig
+    [ "conway", "query", "gov-state"
+    , "--testnet-magic", show @Int testnetMagic
+    ]
+  H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode jsonGovStateAfterValue  -- TODO Delete me
+  enactState <- Aeson.assertHasKey "enactState" jsonGovStateAfterValue
+  constitutionAfter <- Aeson.assertHasKey "constitution" enactState
+  -- jsonGovStateAfter <- Aeson.assertObject jsonGovStateAfterValue
 
+-- data Maybe a =
+--     Nothing
+--   | Just a
+  -- let constitutionAfter = fromJust $ Aeson.lookup "constitution" jsonGovStateAfter
 
-  case eConstitutionAdopted of
-    Left (IOE e) ->
-      H.failMessage callStack
-        $ "foldBlocksCheckConstitutionWasRatified failed with: " <> show e
-    Right (Left e) ->
-      H.failMessage callStack
-        $ "foldBlocksCheckConstitutionWasRatified failed with: " <> Text.unpack (renderFoldBlocksError e)
-    Right (Right _events) -> success
+  -- Testnet.Aeson.assertHasArrayMappingOfLength "proposals" 0 jsonGovStateAfter
+  H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode constitutionBefore
+
+  H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode constitutionAfter
+
+  constitutionBefore H.=== constitutionAfter
 
 foldBlocksCheckProposalWasSubmitted
   :: TxId -- TxId of submitted tx
@@ -384,26 +439,3 @@ filterNewGovProposals txid (NewGovernanceProposals eventTxId (AnyProposals props
   let _govActionStates = Ledger.proposalsGovActionStates props
   in fromShelleyTxId eventTxId == txid
 filterNewGovProposals _ _ = False
-
-
-foldBlocksCheckConstitutionWasRatified
-  :: String -- submitted constitution hash
-  -> Env
-  -> LedgerState
-  -> [LedgerEvent]
-  -> BlockInMode -- Block i
-  -> [LedgerEvent] -- ^ Accumulator at block i - 1
-  -> IO ([LedgerEvent], FoldStatus) -- ^ Accumulator at block i and fold status
-foldBlocksCheckConstitutionWasRatified submittedConstitutionHash _ _ allEvents _ _ =
-  if any (filterRatificationState submittedConstitutionHash) allEvents
-  then return (allEvents , StopFold)
-  else return ([], ContinueFold)
-
-filterRatificationState
-  :: String -- ^ Submitted constitution anchor hash
-  -> LedgerEvent
-  -> Bool
-filterRatificationState c (EpochBoundaryRatificationState (AnyRatificationState rState)) =
-  let constitutionAnchorHash = Ledger.anchorDataHash $ Ledger.constitutionAnchor (rState ^. Ledger.rsEnactStateL . Ledger.ensConstitutionL)
-  in Text.pack c == renderSafeHashAsHex constitutionAnchorHash
-filterRatificationState _ _ = False
