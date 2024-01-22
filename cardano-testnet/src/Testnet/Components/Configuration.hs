@@ -132,6 +132,7 @@ createSPOGenesisAndFiles NumPools {unNumPools = numPoolNodes} era shelleyGenesis
     , "--supply-delegated", "1000000000000"
     , "--stake-delegators", show @Int numStakeDelegators
     , "--utxo-keys", show numSeededUTxOKeys
+    , "--drep-keys", "3"
     , "--start-time", DTC.formatIso8601 startTime
     , "--out-dir", tempAbsPath'
     ]
