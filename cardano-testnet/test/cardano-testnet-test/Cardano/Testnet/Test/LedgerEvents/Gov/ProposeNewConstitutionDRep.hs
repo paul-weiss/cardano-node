@@ -158,6 +158,15 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
       drepSKeyFp :: Int -> FilePath
       drepSKeyFp n = tempAbsPath' </> "drep-keys" </> ("drep" <> show n) </> "drep.skey"
 
+      stakeNativeVKeyFp :: Int -> FilePath
+      stakeNativeVKeyFp n = tempAbsBasePath' </> "stake-delegators" </> ("delegator" <> show n) </> "staking.vkey"
+
+      stakeNativeSKeyFp :: Int -> FilePath
+      stakeNativeSKeyFp n = tempAbsBasePath' </> "stake-delegators" </> ("delegator" <> show n) </> "staking.skey"
+
+      drepCertDelegationFile :: Int -> FilePath
+      drepCertDelegationFile n = gov </> "drep-keys" <> "drep" <> show n <> ".delegationcert"
+
   -- Create Drep registration certificates
   let drepCertFile :: Int -> FilePath
       drepCertFile n = gov </> "drep-keys" <>"drep" <> show n <> ".regcert"
@@ -170,8 +179,7 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
        ]
 
   -- Retrieve UTxOs for registration submission
-
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "query", "utxo"
     , "--address", Text.unpack $ paymentKeyInfoAddr $ head wallets
     , "--cardano-mode"
@@ -179,14 +187,16 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     , "--out-file", work </> "utxo-1.json"
     ]
 
-  utxo1Json <- H.leftFailM . H.readJsonFile $ work </> "utxo-1.json"
-  UTxO utxo1 <- H.noteShowM $ H.noteShowM $ decodeEraUTxO sbe utxo1Json
-  txin1 <- H.noteShow =<< H.headM (Map.keys utxo1)
+  txin1 <- do
+    utxoJson <- H.leftFailM . H.readJsonFile $ work </> "utxo-1.json"
+    UTxO utxo <- H.noteShowM $ decodeEraUTxO sbe utxoJson
+    H.noteShow =<< H.headM (Map.keys utxo)
+  -- Done obtaining UTxOs
 
   drepRegTxbodyFp <- H.note $ work </> "drep.registration.txbody"
   drepRegTxSignedFp <- H.note $ work </> "drep.registration.tx"
 
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "build"
     , "--testnet-magic", show @Int testnetMagic
     , "--change-address", Text.unpack $ paymentKeyInfoAddr $ head wallets
@@ -199,7 +209,7 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     , "--out-file", drepRegTxbodyFp
     ]
 
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "sign"
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-body-file", drepRegTxbodyFp
@@ -210,15 +220,78 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     , "--out-file", drepRegTxSignedFp
     ]
 
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "submit"
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-file", drepRegTxSignedFp
     ]
 
+  -- Delegate votes to the DReps: staking key n delegates to DRep n
+  forM_ [1..3] $ \n -> do
+    H.execCli' execConfig
+       [ "conway", "stake-address", "vote-delegation-certificate"
+       , "--stake-verification-key-file", stakeNativeVKeyFp n
+       , "--drep-verification-key-file", drepVkeyFp n
+       , "--out-file", drepCertDelegationFile n
+       ]
+
+  voteDelegTxBodyFp <- H.note $ work </> gov </> "vote_deleg.txbody"
+  voteDelegTxFp <- H.note $ work </> gov </> "vote_deleg.tx"
+
+  -- Retrieve UTxOs for certificate submission
+  H.note_ =<< H.execCli' execConfig
+    [ "conway", "query", "utxo"
+    , "--address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 1
+    , "--cardano-mode"
+    , "--testnet-magic", show @Int testnetMagic
+    , "--out-file", work </> "utxo-2.json"
+    ]
+
+  txin2 <- do
+    utxoJson <- H.leftFailM . H.readJsonFile $ work </> "utxo-2.json"
+    UTxO utxo <- H.noteShowM $ decodeEraUTxO sbe utxoJson
+    H.noteShow =<< H.headM (Map.keys utxo)
+  -- Done obtaining UTxOs
+
+  H.threadDelay 3_000_000
+
+  H.note_ =<< H.execCli' execConfig
+    [ "conway", "transaction", "build"
+    , "--testnet-magic", show @Int testnetMagic
+    , "--change-address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 1
+    , "--tx-in", Text.unpack $ renderTxIn txin2
+    , "--tx-out", Text.unpack (paymentKeyInfoAddr (head wallets)) <> "+" <> show @Int 5_000_000
+    , "--certificate-file", drepCertDelegationFile 1
+    , "--certificate-file", drepCertDelegationFile 2
+    , "--certificate-file", drepCertDelegationFile 3
+    , "--witness-override", show @Int 4 -- To compute the transaction fees correctly
+    , "--out-file", voteDelegTxBodyFp
+    ]
+
+  H.threadDelay 3_000_000
+
+  H.note_ =<< H.execCli' execConfig
+    [ "conway", "transaction", "sign"
+    , "--testnet-magic", show @Int testnetMagic
+    , "--tx-body-file", voteDelegTxBodyFp
+    , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ wallets !! 1
+    , "--signing-key-file", stakeNativeSKeyFp 1
+    , "--signing-key-file", stakeNativeSKeyFp 2
+    , "--signing-key-file", stakeNativeSKeyFp 3
+    , "--out-file", voteDelegTxFp
+    ]
+
+  H.threadDelay 3_000_000
+
+  H.note_ =<< H.execCli' execConfig
+    [ "conway", "transaction", "submit"
+    , "--testnet-magic", show @Int testnetMagic
+    , "--tx-file", voteDelegTxFp
+    ]
+
   -- Create constitution proposal
 
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "governance", "action", "create-constitution"
     , "--testnet"
     , "--governance-action-deposit", show @Int 0 -- TODO: Get this from the node
@@ -233,37 +306,40 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
   txbodyFp <- H.note $ work </> "tx.body"
   txbodySignedFp <- H.note $ work </> "tx.body.signed"
 
-  void $ H.execCli' execConfig
+  -- Retrieve UTxOs
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "query", "utxo"
     , "--address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 1
     , "--cardano-mode"
     , "--testnet-magic", show @Int testnetMagic
-    , "--out-file", work </> "utxo-2.json"
+    , "--out-file", work </> "utxo-3.json"
     ]
 
-  utxo2Json <- H.leftFailM . H.readJsonFile $ work </> "utxo-2.json"
-  UTxO utxo2 <- H.noteShowM $ H.noteShowM $ decodeEraUTxO sbe utxo2Json
-  txin2 <- H.noteShow =<< H.headM (Map.keys utxo2)
+  txin3 <- do
+    utxoJson <- H.leftFailM . H.readJsonFile $ work </> "utxo-3.json"
+    UTxO utxo <- H.noteShowM $ decodeEraUTxO sbe utxoJson
+    H.noteShow =<< H.headM (Map.keys utxo)
+  -- Done obtaining UTxOs
 
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "build"
     , "--testnet-magic", show @Int testnetMagic
-    , "--change-address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 1
-    , "--tx-in", Text.unpack $ renderTxIn txin2
-    , "--tx-out", Text.unpack (paymentKeyInfoAddr (head wallets)) <> "+" <> show @Int 5_000_000
+    , "--change-address", Text.unpack $ paymentKeyInfoAddr $ head wallets
+    , "--tx-in", Text.unpack $ renderTxIn txin3
+    , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 1)) <> "+" <> show @Int 3_000_000
     , "--proposal-file", constitutionActionFp
     , "--out-file", txbodyFp
     ]
 
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "sign"
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-body-file", txbodyFp
-    , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ wallets !! 1
+    , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ head wallets
     , "--out-file", txbodySignedFp
     ]
 
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "submit"
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-file", txbodySignedFp
@@ -308,19 +384,20 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
       , "--out-file", voteFp n
       ]
 
-  -- We need more UTxOs
+  -- Retrieve UTxOs
+  H.note_ =<< H.execCli' execConfig
+    [ "conway", "query", "utxo"
+    , "--address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 1
+    , "--cardano-mode"
+    , "--testnet-magic", show @Int testnetMagic
+    , "--out-file", work </> "utxo-4.json"
+    ]
 
-  void $ H.execCli' execConfig
-   [ "conway", "query", "utxo"
-   , "--address", Text.unpack $ paymentKeyInfoAddr $ head wallets
-   , "--cardano-mode"
-   , "--testnet-magic", show @Int testnetMagic
-   , "--out-file", work </> "utxo-3.json"
-   ]
-
-  utxo3Json <- H.leftFailM . H.readJsonFile $ work </> "utxo-3.json"
-  UTxO utxo3 <- H.noteShowM $ H.noteShowM $ decodeEraUTxO sbe utxo3Json
-  txin3 <- H.noteShow =<< H.headM (Map.keys utxo3)
+  txin4 <- do
+    utxoJson <- H.leftFailM . H.readJsonFile $ work </> "utxo-4.json"
+    UTxO utxo <- H.noteShowM $ decodeEraUTxO sbe utxoJson
+    H.noteShow =<< H.headM (Map.keys utxo)
+  -- Done obtaining UTxOs
 
   voteTxFp <- H.note $ work </> gov </> "vote.tx"
   govStateBefore <- H.note $ work </> gov </> "gov-state-before.txt"
@@ -328,11 +405,11 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
   govStateAfter <- H.note $ work </> gov </> "gov-state-after.txt"
 
   -- Submit votes
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "build"
     , "--testnet-magic", show @Int testnetMagic
-    , "--change-address", Text.unpack $ paymentKeyInfoAddr $ head wallets
-    , "--tx-in", Text.unpack $ renderTxIn txin3
+    , "--change-address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 1
+    , "--tx-in", Text.unpack $ renderTxIn txin4
     , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 1)) <> "+" <> show @Int 3_000_000
     , "--vote-file", voteFp 1
     , "--vote-file", voteFp 2
@@ -342,7 +419,7 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     ]
 
 
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "sign"
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-body-file", voteTxBodyFp
@@ -367,7 +444,7 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
   -- let constitutionBefore = fromJust $ Aeson.lookup "constitution" jsonGovStateBefore
   -- Testnet.Aeson.assertHasArrayMappingOfLength "proposals" 1 jsonGovStateBefore
 
-  void $ H.execCli' execConfig
+  H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "submit"
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-file", voteTxFp
@@ -375,7 +452,7 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
 
   H.threadDelay (2 * cardanoEpochLength) -- Wait 2 epochs, one should suffice, but let's be safe
 
-  -- void $ H.execCli' execConfig
+  -- H.note_ =<< H.execCli' execConfig
   --   [ "conway", "query", "gov-state"
   --   , "--testnet-magic", show @Int testnetMagic
   --   ]
