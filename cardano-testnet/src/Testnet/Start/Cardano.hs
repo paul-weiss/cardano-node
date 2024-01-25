@@ -16,6 +16,7 @@ module Testnet.Start.Cardano
   , PaymentKeyPair(..)
 
   , cardanoTestnet
+  , cardanoTestnetDefault
   ) where
 
 import           Prelude hiding (lines)
@@ -41,16 +42,25 @@ import qualified Hedgehog.Extras.Stock.OS as OS
 import qualified Hedgehog.Extras.Test.Base as H
 import qualified Hedgehog.Extras.Test.File as H
 
+import qualified Testnet.Defaults as Defaults
+
+import           Cardano.Api
+import           Cardano.Api.Ledger (StandardCrypto)
+import           Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis)
+import           Cardano.Ledger.Conway.Genesis (ConwayGenesis)
 import qualified Control.Monad.Class.MonadTimer.SI as MT
 import           Control.Monad.IO.Class
+import qualified Data.Aeson as Aeson
+import           Data.Bifunctor (first)
+import           Data.Time (UTCTime)
+import           Data.Word (Word32)
 import           Testnet.Components.Configuration
-import           Testnet.Defaults
 import           Testnet.Filepath
 import qualified Testnet.Process.Run as H
 import           Testnet.Process.Run
 import qualified Testnet.Property.Assert as H
 import           Testnet.Property.Checks
-import           Testnet.Runtime as TR
+import           Testnet.Runtime as TR hiding (shelleyGenesis)
 import qualified Testnet.Start.Byron as Byron
 import           Testnet.Start.Types
 
@@ -63,10 +73,11 @@ import           Testnet.Start.Types
 -- a valid node cluster.
 testnetMinimumConfigurationRequirements :: CardanoTestnetOptions -> H.Integration ()
 testnetMinimumConfigurationRequirements cTestnetOpts = do
-  when (length (cardanoNodes cTestnetOpts) < 2) $ do
-     H.noteShow_ ("Need at least two nodes to run a cluster" :: String)
+  let actualLength = length (cardanoNodes cTestnetOpts)
+  when (actualLength < 2) $ do
+     H.noteShow_ ("Need at least two nodes to run a cluster, but got: " <> show actualLength)
      H.noteShow_ cTestnetOpts
-     H.assert False
+     H.failure
 
 data ForkPoint
   = AtVersion Int
@@ -79,6 +90,19 @@ data ForkPoint
 startTimeOffsetSeconds :: DTC.NominalDiffTime
 startTimeOffsetSeconds = if OS.isWin32 then 90 else 15
 
+-- | Like 'cardanoTestnet', but using defaults for all configuration files.
+-- See 'cardanoTestnet' for additional documentation.
+cardanoTestnetDefault :: ()
+  => CardanoTestnetOptions
+  -> Conf
+  -> H.Integration TestnetRuntime
+cardanoTestnetDefault opts conf = do
+  alonzoGenesis <- H.evalEither $ first prettyError Defaults.defaultAlonzoGenesis
+  currentTime <- H.noteShowIO DTC.getCurrentTime
+  startTime <- H.noteShow $ DTC.addUTCTime startTimeOffsetSeconds currentTime
+  cardanoTestnet
+    opts conf startTime
+    (Defaults.defaultShelleyGenesis startTime opts) alonzoGenesis Defaults.defaultConwayGenesis
 
 -- | Setup a number of credentials and pools, like this:
 --
@@ -122,14 +146,38 @@ startTimeOffsetSeconds = if OS.isWin32 then 90 else 15
 -- > │   └── node-spo{1,2,3}
 -- > └── utxo-keys
 -- >     └── utxo{1,2,3}.{addr,skey,vkey}
-cardanoTestnet :: CardanoTestnetOptions -> Conf -> H.Integration TestnetRuntime
-cardanoTestnet testnetOptions Conf {tempAbsPath} = do
-  testnetMinimumConfigurationRequirements testnetOptions
-  void $ H.note OS.os
-  currentTime <- H.noteShowIO DTC.getCurrentTime
-  let tempAbsPath' = unTmpAbsPath tempAbsPath
+cardanoTestnet :: ()
+  => CardanoTestnetOptions -- ^ The options to use. Must be consistent with the genesis files.
+  -> Conf
+  -> UTCTime -- ^ The starting time. Must be the same as the one in the shelley genesis.
+  -> ShelleyGenesis StandardCrypto -- ^ The shelley genesis to use, for example 'Defaults.defaultShelleyGenesis'.
+                                   --   Some fields are overridden by the accompanying 'CardanoTestnetOptions'.
+  -> AlonzoGenesis -- ^ The alonzo genesis to use, for example 'Defaults.defaultAlonzoGenesis'.
+  -> ConwayGenesis StandardCrypto -- ^ The conway genesis to use, for example 'Defaults.defaultConwayGenesis'.
+  -> H.Integration TestnetRuntime
+cardanoTestnet
+  testnetOptions Conf {tempAbsPath} startTime
+  shelleyGenesis alonzoGenesis conwayGenesis = do
+  let shelleyStartTime = sgSystemStart shelleyGenesis
+      shelleyTestnetMagic = sgNetworkMagic shelleyGenesis
+      optionsMagic :: Word32 = fromIntegral $ cardanoTestnetMagic testnetOptions
+      tempAbsPath' = unTmpAbsPath tempAbsPath
       testnetMagic = cardanoTestnetMagic testnetOptions
       numPoolNodes = length $ cardanoNodes testnetOptions
+      numPools = NumPools $ length $ cardanoNodes testnetOptions
+      era = cardanoNodeEra testnetOptions
+
+   -- Sanity checks
+  testnetMinimumConfigurationRequirements testnetOptions
+  when (shelleyStartTime /= startTime) $ do
+    H.note_ $ "Expected same system start in shelley genesis and parameter, but got " <> show shelleyStartTime <> " and " <> show startTime
+    H.failure
+  when (shelleyTestnetMagic /= optionsMagic) $ do
+    H.note_ $ "Expected same network magic in shelley genesis and parameter, but got " <> show shelleyTestnetMagic <> " and " <> show optionsMagic
+    H.failure
+  -- Done with sanity checks
+
+  H.note_ OS.os
 
   if all isJust [mconfig | SpoTestnetNodeOptions mconfig _ <- cardanoNodes testnetOptions]
   then
@@ -139,10 +187,8 @@ cardanoTestnet testnetOptions Conf {tempAbsPath} = do
     -- See all of the ad hoc file creation/renaming/dir creation etc below.
     H.failMessage GHC.callStack "Specifying node configuration files per node not supported yet."
   else do
-    startTime <- H.noteShow $ DTC.addUTCTime startTimeOffsetSeconds currentTime
-
     H.lbsWriteFile (tempAbsPath' </> "byron.genesis.spec.json")
-      . J.encode $ defaultByronProtocolParamsJsonValue
+      . J.encode $ Defaults.defaultByronProtocolParamsJsonValue
 
     -- Because in Conway the overlay schedule and decentralization parameter
     -- are deprecated, we must use the "create-staked" cli command to create
@@ -154,10 +200,17 @@ cardanoTestnet testnetOptions Conf {tempAbsPath} = do
       (tempAbsPath' </> "byron.genesis.spec.json")
       (tempAbsPath' </> "byron-gen-command")
 
-    _ <- createSPOGenesisAndFiles testnetOptions startTime (TmpAbsolutePath tempAbsPath')
+    -- Write Alonzo genesis file
+    alonzoGenesisJsonFile <- H.noteShow $ tempAbsPath' </> "genesis.alonzo.spec.json"
+    H.evalIO $ LBS.writeFile alonzoGenesisJsonFile $ Aeson.encode alonzoGenesis
+
+    -- Write Conway genesis file
+    conwayGenesisJsonFile <- H.noteShow $ tempAbsPath' </> "genesis.conway.spec.json"
+    H.evalIO $ LBS.writeFile conwayGenesisJsonFile $ Aeson.encode conwayGenesis
 
     configurationFile <- H.noteShow $ tempAbsPath' </> "configuration.yaml"
 
+    _ <- createSPOGenesisAndFiles numPools era shelleyGenesis (TmpAbsolutePath tempAbsPath')
 
     poolKeys <- H.noteShow $ flip fmap [1..numPoolNodes] $ \n ->
       PoolNodeKeys
@@ -215,7 +268,7 @@ cardanoTestnet testnetOptions Conf {tempAbsPath} = do
 
 
     -- Add Byron, Shelley and Alonzo genesis hashes to node configuration
-    finalYamlConfig <- createConfigYaml tempAbsPath $ cardanoNodeEra testnetOptions
+    finalYamlConfig <- createConfigYaml tempAbsPath era
 
     H.evalIO $ LBS.writeFile configurationFile finalYamlConfig
 
@@ -340,7 +393,7 @@ cardanoTestnet testnetOptions Conf {tempAbsPath} = do
 
       let runtime = TestnetRuntime
             { configurationFile
-            , shelleyGenesisFile = tempAbsPath' </> defaultShelleyGenesisFp
+            , shelleyGenesisFile = tempAbsPath' </> Defaults.defaultShelleyGenesisFp
             , testnetMagic
             , poolNodes
             , wallets = wallets

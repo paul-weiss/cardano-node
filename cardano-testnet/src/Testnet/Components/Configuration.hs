@@ -8,6 +8,7 @@ module Testnet.Components.Configuration
   , createSPOGenesisAndFiles
   , mkTopologyConfig
   , numSeededUTxOKeys
+  , NumPools(..)
   ) where
 
 import           Cardano.Api.Shelley hiding (cardanoEra)
@@ -28,7 +29,6 @@ import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
 import           Data.String
-import           Data.Time
 import           GHC.Stack (HasCallStack)
 import qualified GHC.Stack as GHC
 import           System.FilePath.Posix (takeDirectory, (</>))
@@ -42,11 +42,12 @@ import qualified Hedgehog.Extras.Test.File as H
 import qualified Data.Aeson.Lens as L
 import           Lens.Micro
 
+import           Cardano.Api.Ledger (StandardCrypto)
+import           Data.Word (Word32)
 import           Testnet.Defaults
 import           Testnet.Filepath
 import           Testnet.Process.Run (execCli_)
 import           Testnet.Property.Utils
-import           Testnet.Start.Types
 
 
 createConfigYaml
@@ -78,35 +79,32 @@ createConfigYaml (TmpAbsolutePath tempAbsPath') anyCardanoEra' = GHC.withFrozenC
 numSeededUTxOKeys :: Int
 numSeededUTxOKeys = 3
 
+newtype NumPools = NumPools { unNumPools :: Int }
+
 createSPOGenesisAndFiles
   :: (MonadTest m, MonadCatch m, MonadIO m, HasCallStack)
-  => CardanoTestnetOptions
-  -> UTCTime -- ^ Start time
+  => NumPools
+  -> AnyCardanoEra -- ^ The era to use
+  -> ShelleyGenesis StandardCrypto -- ^ The shelley genesis to use.
   -> TmpAbsolutePath
   -> m FilePath -- ^ Shelley genesis directory
-createSPOGenesisAndFiles testnetOptions startTime (TmpAbsolutePath tempAbsPath') = do
+createSPOGenesisAndFiles NumPools {unNumPools = numPoolNodes} era shelleyGenesis (TmpAbsolutePath tempAbsPath') = do
   let genesisShelleyFpAbs = tempAbsPath' </> defaultShelleyGenesisFp
       genesisShelleyDirAbs = takeDirectory genesisShelleyFpAbs
   genesisShelleyDir <- H.createDirectoryIfMissing genesisShelleyDirAbs
-  let testnetMagic = cardanoTestnetMagic testnetOptions
-      numPoolNodes = length $ cardanoNodes testnetOptions
+  let testnetMagic = sgNetworkMagic shelleyGenesis
       numStakeDelegators = 3
-      era = cardanoNodeEra testnetOptions
-      -- TODO: Even this is cumbersome. You need to know where to put the initial
-      -- shelley genesis for create-testnet-data to use.
+      startTime = sgSystemStart shelleyGenesis
 
   -- TODO: We need to read the genesis files into Haskell and modify them
   -- based on cardano-testnet's cli parameters
 
   -- We create the initial genesis file to avoid having to re-write the genesis file later
   -- with the parameters we want. The user must provide genesis files or we will use a default.
-  -- We should *never* be modifying the genesis file after cardano-testnet is run because this
+  -- We should *never* be modifying the genesis file after @cardanoTestnet@ is run because this
   -- is sure to be a source of confusion if users provide genesis files and we are mutating them
   -- without their knowledge.
-  let shelleyGenesis :: LBS.ByteString
-      shelleyGenesis = encode $ defaultShelleyGenesis startTime testnetOptions
-
-  H.evalIO $ LBS.writeFile genesisShelleyFpAbs shelleyGenesis
+  H.evalIO $ LBS.writeFile genesisShelleyFpAbs $ encode shelleyGenesis
 
   -- TODO: Remove this rewrite.
  -- 50 second epochs
@@ -128,7 +126,7 @@ createSPOGenesisAndFiles testnetOptions startTime (TmpAbsolutePath tempAbsPath')
   execCli_
     [ convertToEraString era, "genesis", "create-testnet-data"
     , "--spec-shelley", genesisShelleyFpAbs
-    , "--testnet-magic", show @Int testnetMagic
+    , "--testnet-magic", show @Word32 testnetMagic
     , "--pools", show @Int numPoolNodes
     , "--supply", "1000000000000"
     , "--supply-delegated", "1000000000000"

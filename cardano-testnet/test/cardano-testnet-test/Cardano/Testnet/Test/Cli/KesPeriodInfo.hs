@@ -66,7 +66,7 @@ hprop_kes_period_info = H.integrationRetryWorkspace 2 "kes-period-info" $ \tempA
                           , cardanoNodeEra = AnyCardanoEra era -- TODO: We should only support the latest era and the upcoming era
                           }
 
-  runTime@TestnetRuntime { testnetMagic, wallets } <- cardanoTestnet cTestnetOptions conf
+  runTime@TestnetRuntime { testnetMagic, wallets } <- cardanoTestnetDefault cTestnetOptions conf
   execConfig <- H.headM (poolSprockets runTime) >>= H.mkExecConfig tempBaseAbsPath
 
   -- First we note all the relevant files
