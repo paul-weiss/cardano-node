@@ -6,6 +6,7 @@ module Cardano.Testnet (
   -- ** Start a testnet
   cardanoTestnet,
   cardanoTestnetDefault,
+  getStartTime,
 
   -- ** Testnet options
   CardanoTestnetOptions(..),
@@ -38,6 +39,6 @@ module Cardano.Testnet (
 import           Testnet.Filepath
 import           Testnet.Process.Run (procChairman)
 import           Testnet.Property.Utils
-import           Testnet.Runtime
+import           Testnet.Runtime hiding (getStartTime)
 import           Testnet.Start.Cardano
 import           Testnet.Start.Types

@@ -55,8 +55,10 @@ import qualified Testnet.Aeson
 import qualified Testnet.Aeson as Aeson
 import           Testnet.Components.SPO
 import qualified Testnet.Property.Utils as H
-import           Testnet.Runtime
+import           Testnet.Runtime hiding (getStartTime, shelleyGenesis)
 
+import qualified Cardano.Testnet as Cardano
+import           Data.Bifunctor (Bifunctor (first))
 
 newtype AdditionalCatcher
   = IOE IOException
@@ -102,12 +104,16 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
         , cardanoNodeEra = cEra
         }
 
+  startTime <- Cardano.getStartTime
+  let shelleyGenesis = Defaults.defaultShelleyGenesis startTime fastTestnetOptions
+  alonzoGenesis <- H.evalEither $ first prettyError defaultAlonzoGenesis
+
   testnetRuntime@TestnetRuntime
     { testnetMagic
     , poolNodes
     , wallets
     }
-    <- cardanoTestnet fastTestnetOptions conf Nothing Nothing (Just conwayGenesis)
+    <- cardanoTestnet fastTestnetOptions conf startTime shelleyGenesis alonzoGenesis conwayGenesis
 
   poolNode1 <- H.headM poolNodes
 

@@ -17,6 +17,7 @@ module Testnet.Start.Cardano
 
   , cardanoTestnet
   , cardanoTestnetDefault
+  , getStartTime
   ) where
 
 import           Prelude hiding (lines)
@@ -60,7 +61,7 @@ import qualified Testnet.Process.Run as H
 import           Testnet.Process.Run
 import qualified Testnet.Property.Assert as H
 import           Testnet.Property.Checks
-import           Testnet.Runtime as TR hiding (shelleyGenesis)
+import           Testnet.Runtime as TR hiding (getStartTime, shelleyGenesis)
 import qualified Testnet.Start.Byron as Byron
 import           Testnet.Start.Types
 
@@ -84,6 +85,11 @@ data ForkPoint
   | AtEpoch Int
   deriving (Show, Eq, Read)
 
+-- | Returns a time that is fine to be put in a genesis file
+getStartTime :: H.Integration UTCTime
+getStartTime = do
+  currentTime <- H.noteShowIO DTC.getCurrentTime
+  H.noteShow $ DTC.addUTCTime startTimeOffsetSeconds currentTime
 
 -- | For an unknown reason, CLI commands are a lot slower on Windows than on Linux and
 -- MacOS.  We need to allow a lot more time to set up a testnet.
@@ -98,8 +104,7 @@ cardanoTestnetDefault :: ()
   -> H.Integration TestnetRuntime
 cardanoTestnetDefault opts conf = do
   alonzoGenesis <- H.evalEither $ first prettyError Defaults.defaultAlonzoGenesis
-  currentTime <- H.noteShowIO DTC.getCurrentTime
-  startTime <- H.noteShow $ DTC.addUTCTime startTimeOffsetSeconds currentTime
+  startTime <- getStartTime
   cardanoTestnet
     opts conf startTime
     (Defaults.defaultShelleyGenesis startTime opts) alonzoGenesis Defaults.defaultConwayGenesis

@@ -35,7 +35,7 @@ import qualified Hedgehog.Internal.Property as H
 
 import           Testnet.Process.Run
 import qualified Testnet.Property.Utils as H
-import           Testnet.Runtime
+import           Testnet.Runtime as Runtime
 
 -- | Tests @query slot-number@ cardano-cli command that it returns correct slot numbers for provided utc time
 hprop_querySlotNumber :: Property
@@ -56,7 +56,7 @@ hprop_querySlotNumber = H.integrationRetryWorkspace 2 "query-slot-number" $ \tem
     , poolNodes
     } <- cardanoTestnetDefault options conf
   ShelleyGenesis{sgSlotLength, sgEpochLength} <- H.noteShowM $ shelleyGenesis tr
-  startTime <- H.noteShowM $ getStartTime tempAbsBasePath' tr
+  startTime <- H.noteShowM $ Runtime.getStartTime tempAbsBasePath' tr
 
   let slotLength = fromNominalDiffTimeMicro sgSlotLength
       -- how many slots can the checked value differ from
