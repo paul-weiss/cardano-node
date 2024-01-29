@@ -327,22 +327,59 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     H.noteShow =<< H.headM (Map.keys utxo)
   -- Done obtaining UTxOs
 
+  H.noteM_ $ H.execCli' execConfig
+    [ "conway", "query", "utxo", "--whole-utxo", "--testnet-magic", "42" ]
+
   H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "build"
     , "--testnet-magic", show @Int testnetMagic
-    , "--change-address", Text.unpack $ paymentKeyInfoAddr $ head wallets
     , "--tx-in", Text.unpack $ renderTxIn txin3
-    -- , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 1)) -- <> "+" <> show @Int 3_000_000
+    , "--change-address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 1
+    , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 1)) <> "+" <> show @Int 5_000_000
+    -- , "--witness-override", "2"
     , "--proposal-file", constitutionActionFp
-    , "--witness-override", show @Int 2
     , "--out-file", txbodyFp
     ]
+
+-- With the --tx-out:
+--
+-- Command failed: transaction build  Error: The transaction does not balance in its use of ada.
+-- The net balance of the transaction is negative: Lovelace (-404) lovelace. The usual solution is to provide more inputs, or inputs with more ada.
+--
+-- That's the same failure if we take Jordan's version from ProposeNewConstitution.hs
+
+-- Without the --tx-out:
+--
+-- ShelleyTxValidationError 
+--   ShelleyBasedEraConway
+--     (ApplyTxError
+--       [ConwayUtxowFailure
+--         (UtxoFailure
+--           (AlonzoInBabbageUtxoPredFailure
+--             (ValueNotConservedUTxO
+--               (MaryValue -- Consumed
+--                 (Coin 0)
+--                 (MultiAsset (fromList []))
+--               )
+--               (MaryValue -- Produced
+--                 (Coin 300000000000)
+--                 (MultiAsset (fromList []))
+--               )
+--             ))
+--         )
+--         ConwayUtxowFailure
+--           (UtxoFailure
+--             (AlonzoInBabbageUtxoPredFailure
+--               (BadInputsUTxO
+--                 [TxIn
+--                   (TxId {unTxId = SafeHash "ede6f1a42e600b966d1a85200d9dbde7119b968bd4c0df27c8802a570ed1ec3e"})
+--                   (TxIx 0)])))])
 
   H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "sign"
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-body-file", txbodyFp
-    , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ head wallets
+    -- , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ head wallets
     , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ wallets !! 1
     , "--out-file", txbodySignedFp
     ]
