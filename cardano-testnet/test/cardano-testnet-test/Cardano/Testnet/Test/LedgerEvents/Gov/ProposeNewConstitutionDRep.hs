@@ -72,7 +72,7 @@ data ExpectedResult =
   | ConstitutionUnchanged
 
 -- | Execute me with:
--- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/ProposeNewConstitutionDRepNotEnoughDelegation/'@
+-- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/ProposeNewConstitutionDRepNotEnoughDelegation/"'@
 hprop_propose_new_constitution_not_enough_delegation :: Property
 hprop_propose_new_constitution_not_enough_delegation =
   hprop_propose_new_constitution ConstitutionUnchanged $ fromJust $ boundRational @UnitInterval (67 % 100)
@@ -332,8 +332,9 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     , "--testnet-magic", show @Int testnetMagic
     , "--change-address", Text.unpack $ paymentKeyInfoAddr $ head wallets
     , "--tx-in", Text.unpack $ renderTxIn txin3
-    , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 1)) <> "+" <> show @Int 3_000_000
+    -- , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 1)) -- <> "+" <> show @Int 3_000_000
     , "--proposal-file", constitutionActionFp
+    , "--witness-override", show @Int 2
     , "--out-file", txbodyFp
     ]
 
@@ -342,6 +343,7 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-body-file", txbodyFp
     , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ head wallets
+    , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ wallets !! 1
     , "--out-file", txbodySignedFp
     ]
 
