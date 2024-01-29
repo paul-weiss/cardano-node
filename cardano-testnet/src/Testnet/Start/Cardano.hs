@@ -254,6 +254,7 @@ cardanoTestnet
         , paymentKeyInfoAddr = Text.pack paymentAddr
         }
 
+    -- TODO @smelc use --create-testnet-data's new --stake-delegators flag instead
     _delegators <- forM [1..3] $ \idx -> do
       pure $ Delegator
         { paymentKeyPair = PaymentKeyPair
