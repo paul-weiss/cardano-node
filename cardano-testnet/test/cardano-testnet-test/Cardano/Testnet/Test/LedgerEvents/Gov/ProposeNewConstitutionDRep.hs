@@ -366,6 +366,26 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
 
   H.noteM_ $ H.execCli' execConfig
     [ "conway", "query", "utxo", "--whole-utxo", "--testnet-magic", "42"]
+  -- │ Command: /home/churlin/dev/cardano-node/dist-newstyle/build/x86_64-linux/ghc-8.10.7/cardano-cli-8.19.0.0/x/cardano-cli/build/cardano-cli/cardano-cli conway query utxo --whole-utxo --testnet-magic 42
+  -- ┃     │                            TxHash                                 TxIx        Amount
+  -- ┃     │ --------------------------------------------------------------------------------------
+  -- ┃     │ 25732dd74a0311e12fc51b280ddb7e0dc1899cea5415b76ab57ee454e97b3606     0        2666666666666667 lovelace + TxOutDatumNone
+  -- ┃     │ 39dbf9fc51c46377ad52a422fa9622f0e669d867c0cf294a9de89ea985ee610b     0        300000000000 lovelace + TxOutDatumNone
+  -- ┃     │ 5c958373497564014fdff939ab3e30cbc4570b71b26a72136846db1c9700ddd7     0        299999999300 lovelace + TxOutDatumNone
+  -- ┃     │ 6681e0758683cd2c3c637b66775e414f42131eff59a0bf5210f302fa0a082d13     0        300000000000 lovelace + TxOutDatumNone
+  -- ┃     │ 7302912e58cd53edc505512795f691069711ffa01fb90018d0b7385a32769925     0        300000000000 lovelace + TxOutDatumNone
+  -- ┃     │ 8b6a647492e5b063ac93014b09dc34941446f68e632e0cef79545e540a1dbbc2     0        299999999390 lovelace + TxOutDatumNone
+  -- ┃     │ bf87e043a9113e3e33b74c307cec294d3abe44b267b0bb17a71bbc5463e8a106     0        2666666666666667 lovelace + TxOutDatumNone
+  -- ┃     │ ccfabd1b3f293f3cf4ac8a7109c93aadd1540f196e341562827c204743a1c67a     0        2666666666666667 lovelace + TxOutDatumNone
+  -- ┃     │ e2075175e3916afdb96922ca4ed519127e937f0856fa7e2bbd7a0fab17965e78     0        300000000000 lovelace + TxOutDatumNone
+
+  -- Sometimes fails with:
+  -- Command: /home/churlin/dev/cardano-node/dist-newstyle/build/x86_64-linux/ghc-8.10.7/cardano-cli-8.19.0.0/x/cardano-cli/build/cardano-cli/cardano-cli conway transaction submit --testnet-magic 42 --tx-file /tmp/nix-shell.SbhJvi/propose-new-constitution-no-retries-test-a4bc13ec60c502bb/work/tx.body.signed
+  -- ┃     │ Process exited with non-zero exit-code: 1
+  -- ┃     │ ━━━━ command ━━━━
+  -- ┃     │ cardano-cli conway transaction submit --testnet-magic 42 --tx-file /tmp/nix-shell.SbhJvi/propose-new-constitution-no-retries-test-a4bc13ec60c502bb/work/tx.body.signed
+  -- ┃     │ ━━━━ stderr ━━━━
+  -- ┃     │ Command failed: transaction submit  Error: Error while submitting tx: ShelleyTxValidationError ShelleyBasedEraConway (ApplyTxError [ConwayUtxowFailure (UtxoFailure (AlonzoInBabbageUtxoPredFailure (ValueNotConservedUTxO (MaryValue (Coin 0) (MultiAsset (fromList []))) (MaryValue (Coin 300000000000) (MultiAsset (fromList [])))))),ConwayUtxowFailure (UtxoFailure (AlonzoInBabbageUtxoPredFailure (BadInputsUTxO (fromList [TxIn (TxId {unTxId = SafeHash "dfb058a79a27794e5719507f6fb1bd8b6ddbd12d013b7a143f539eac671586f9"}) (TxIx 0)]))))])
 
   H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "submit"
