@@ -60,6 +60,7 @@ import           Testnet.Runtime hiding (getStartTime, shelleyGenesis)
 
 import qualified Cardano.Testnet as Cardano
 import           Data.Bifunctor (Bifunctor (first))
+import Lens.Micro ((^.))
 
 newtype AdditionalCatcher
   = IOE IOException
@@ -477,6 +478,24 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     , "--tx-file", voteTxFp
     ]
 
+  !eConstitutionAdopted
+    <- runExceptT $ handleIOExceptT IOE
+                  $ runExceptT $ foldBlocks
+                      (File $ configurationFile testnetRuntime)
+                      (File socketPath)
+                      FullValidation
+                      [] -- Initial accumulator state
+                      (foldBlocksCheckConstitutionWasRatified constitutionHash)
+
+  case eConstitutionAdopted of
+    Left (IOE e) ->
+      H.failMessage callStack
+        $ "foldBlocksCheckConstitutionWasRatified failed with: " <> show e
+    Right (Left e) ->
+      H.failMessage callStack
+        $ "foldBlocksCheckConstitutionWasRatified failed with: " <> Text.unpack (renderFoldBlocksError e)
+    Right (Right _events) -> success
+
   H.threadDelay (2 * cardanoEpochLength) -- Wait 2 epochs, one should suffice, but let's be safe
 
   jsonGovStateAfterValue :: Aeson.Value <- fromJust . Aeson.decode . strToLBS <$> H.execCli' execConfig
@@ -534,3 +553,25 @@ filterNewGovProposals txid (NewGovernanceProposals eventTxId (AnyProposals props
   let _govActionStates = Ledger.proposalsGovActionStates props
   in fromShelleyTxId eventTxId == txid
 filterNewGovProposals _ _ = False
+
+foldBlocksCheckConstitutionWasRatified
+  :: String -- submitted constitution hash
+  -> Env
+  -> LedgerState
+  -> [LedgerEvent]
+  -> BlockInMode -- Block i
+  -> [LedgerEvent] -- ^ Accumulator at block i - 1
+  -> IO ([LedgerEvent], FoldStatus) -- ^ Accumulator at block i and fold status
+foldBlocksCheckConstitutionWasRatified submittedConstitutionHash _ _ allEvents _ _ =
+  if any (filterRatificationState submittedConstitutionHash) allEvents
+  then return (allEvents , StopFold)
+  else return ([], ContinueFold)
+
+filterRatificationState
+  :: String -- ^ Submitted constitution anchor hash
+  -> LedgerEvent
+  -> Bool
+filterRatificationState c (EpochBoundaryRatificationState (AnyRatificationState rState)) =
+  let constitutionAnchorHash = Ledger.anchorDataHash $ Ledger.constitutionAnchor (rState ^. Ledger.rsEnactStateL . Ledger.ensConstitutionL)
+  in Text.pack c == renderSafeHashAsHex constitutionAnchorHash
+filterRatificationState _ _ = False
