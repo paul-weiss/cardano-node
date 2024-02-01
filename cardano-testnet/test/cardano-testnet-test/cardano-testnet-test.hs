@@ -35,7 +35,9 @@ tests = pure $ T.testGroup "test/Spec.hs"
       , T.testGroup "Governance"
          -- TODO: Replace foldBlocks with checkLedgerStateCondition
          --    [ H.ignoreOnMacAndWindows "ProposeAndRatifyNewConstitution" LedgerEvents.hprop_ledger_events_propose_new_constitution]
-          [ H.ignoreOnWindows "ProposeNewConstitutionDRepNotEnoughDelegation" ProposeNewConstitutionDRep.hprop_propose_new_constitution_not_enough_delegation ]
+          [ H.ignoreOnWindows "ProposeNewConstitutionDRepRatioEnoughDelegation" ProposeNewConstitutionDRep.hprop_propose_new_constitution_ratio_enough_delegation
+          , H.ignoreOnWindows "ProposeNewConstitutionDRepRatioNotEnoughDelegation" ProposeNewConstitutionDRep.hprop_propose_new_constitution_ratio_not_enough_delegation
+          ]
       , T.testGroup "CLI"
         [ H.ignoreOnWindows "Shutdown" Cardano.Testnet.Test.Node.Shutdown.hprop_shutdown
         -- ShutdownOnSigint fails on Mac with

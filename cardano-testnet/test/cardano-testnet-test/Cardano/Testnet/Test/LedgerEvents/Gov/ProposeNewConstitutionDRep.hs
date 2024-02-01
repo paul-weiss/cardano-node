@@ -9,7 +9,8 @@
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Cardano.Testnet.Test.LedgerEvents.Gov.ProposeNewConstitutionDRep
-  ( hprop_propose_new_constitution_not_enough_delegation
+  ( hprop_propose_new_constitution_ratio_enough_delegation
+  , hprop_propose_new_constitution_ratio_not_enough_delegation
   ) where
 
 import           Testnet.Defaults as Defaults
@@ -67,17 +68,26 @@ newtype AdditionalCatcher
 -- | Whether the constitution proposition is expected to pass or not in the test
 data ExpectedResult =
   -- | Constitution is being changed
-  ConstitutionChange
+  ConstitutionChanged
   -- | Constitution is not changed
   | ConstitutionUnchanged
 
 -- | Execute me with:
--- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/ProposeNewConstitutionDRepNotEnoughDelegation/"'@
-hprop_propose_new_constitution_not_enough_delegation :: Property
-hprop_propose_new_constitution_not_enough_delegation =
-  hprop_propose_new_constitution ConstitutionUnchanged $ fromJust $ boundRational @UnitInterval (67 % 100)
+-- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/ProposeNewConstitutionDRepRatioNotEnoughDelegation/"'@
+hprop_propose_new_constitution_ratio_enough_delegation :: Property
+hprop_propose_new_constitution_ratio_enough_delegation =
+  hprop_propose_new_constitution ConstitutionChanged $ fromJust $ boundRational @UnitInterval (67 % 100)
 
-hprop_propose_new_constitution :: ExpectedResult -> UnitInterval -> Property
+-- | Execute me with:
+-- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/ProposeNewConstitutionDRepRatioNotEnoughDelegation/"'@
+hprop_propose_new_constitution_ratio_not_enough_delegation :: Property
+hprop_propose_new_constitution_ratio_not_enough_delegation =
+  hprop_propose_new_constitution ConstitutionUnchanged $ fromJust $ boundRational @UnitInterval (100 % 100)
+
+hprop_propose_new_constitution :: ()
+  => ExpectedResult
+  -> UnitInterval -- ^ The ratio required to change the constitution
+  -> Property
 hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integrationRetryWorkspace 2 "propose-new-constitution" $ \tempAbsBasePath' -> do
   -- Start a local test net
   conf@Conf { tempAbsPath } <- H.noteShowM $ mkConf tempAbsBasePath'
@@ -288,7 +298,7 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     , "--testnet-magic", show @Int testnetMagic
     , "--tx-file", voteDelegTxFp
     ]
-  
+
   H.threadDelay 3_000_000
 
   H.note_ =<< H.execCli' execConfig
@@ -330,6 +340,7 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
 
   txin3 <- do
     utxoJson <- H.leftFailM . H.readJsonFile $ work </> "utxo-3.json"
+    H.noteShow_ utxoJson
     UTxO utxo <- H.noteShowM $ decodeEraUTxO sbe utxoJson
     H.noteShow =<< H.headM (Map.keys utxo)
   -- Done obtaining UTxOs
@@ -351,6 +362,9 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ wallets !! 1
     , "--out-file", txbodySignedFp
     ]
+
+  H.noteM_ $ H.execCli' execConfig
+    [ "conway", "query", "utxo", "--whole-utxo", "--testnet-magic", "42"]
 
   H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "submit"
@@ -451,12 +465,11 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     [ "conway", "query", "gov-state"
     , "--testnet-magic", show @Int testnetMagic
     ]
-  H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode jsonGovStateBeforeValue -- TODO Delete me
+  -- H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode jsonGovStateBeforeValue -- Too verbose
   enactStateBefore <- Aeson.assertHasKey "enactState" jsonGovStateBeforeValue
   constitutionBefore <- Aeson.assertHasKey "constitution" enactStateBefore
-  -- jsonGovStateBefore <- Aeson.assertObject jsonGovStateBeforeValue
-  -- let constitutionBefore = fromJust $ Aeson.lookup "constitution" jsonGovStateBefore
-  -- Testnet.Aeson.assertHasArrayMappingOfLength "proposals" 1 jsonGovStateBefore
+  H.note_ "Constitution before"
+  H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode constitutionBefore
 
   H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "submit"
@@ -470,15 +483,17 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
     [ "conway", "query", "gov-state"
     , "--testnet-magic", show @Int testnetMagic
     ]
-  H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode jsonGovStateAfterValue  -- TODO Delete me
+  -- H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode jsonGovStateAfterValue -- Too verbose
   enactState <- Aeson.assertHasKey "enactState" jsonGovStateAfterValue
   constitutionAfter <- Aeson.assertHasKey "constitution" enactState
-
-  H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode constitutionBefore
-
+  H.note_ "Constitution after"
   H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode constitutionAfter
 
-  constitutionBefore H.=== constitutionAfter
+  case expectation of
+    ConstitutionUnchanged -> do
+       constitutionBefore H.=== constitutionAfter
+    ConstitutionChanged -> do
+       constitutionBefore H./== constitutionAfter
 
 foldBlocksCheckProposalWasSubmitted
   :: TxId -- TxId of submitted tx
