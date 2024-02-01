@@ -492,6 +492,15 @@ hprop_propose_new_constitution expectation dvtUpdateConstitutionRatio = H.integr
   H.note_ "Constitution before"
   H.note_ $ TL.unpack . TL.decodeUtf8 $ Aeson.encode constitutionBefore
 
+  -- Sometimes seeing
+--  │ Command: /home/churlin/dev/cardano-node/dist-newstyle/build/x86_64-linux/ghc-8.10.7/cardano-cli-8.19.0.0/x/cardano-cli/build/cardano-cli/cardano-cli conway transaction submit --testnet-magic 42 --tx-file /tmp/nix-shell.SbhJvi/propose-new-constitution-no-retries-test-21964e980d6b90e0/work/governance/vote.tx
+--  ┃     │ Process exited with non-zero exit-code: 1
+--  ┃     │ ━━━━ command ━━━━
+--  ┃     │ cardano-cli conway transaction submit --testnet-magic 42 --tx-file /tmp/nix-shell.SbhJvi/propose-new-constitution-no-retries-test-21964e980d6b90e0/work/governance/vote.tx
+--  ┃     │ ━━━━ stderr ━━━━
+--  ┃     │ Command failed: transaction submit  Error: Error while submitting tx: ShelleyTxValidationError ShelleyBasedEraConway (ApplyTxError [ConwayGovFailure (VotingOnExpiredGovAction (fromList [(GovActionId {gaidTxId = TxId {unTxId = SafeHash "c33d86c21fd0d9e2aa6e183c7e4c421b173e24a37ff093922d4c347eb3cc16b2"}, gaidGovActionIx = GovActionIx 0},DRepVoter (KeyHashObj (KeyHash "b9e5690afbd50816a2f8de1f6f9bdb47773e1cf352ccfef66af5b85e")))]))])
+--  ┃     │ 
+
   H.note_ =<< H.execCli' execConfig
     [ "conway", "transaction", "submit"
     , "--testnet-magic", show @Int testnetMagic
