@@ -66,16 +66,23 @@ if impl(ghc >= 9.6)
 -- utxo-hd
 source-repository-package
   type: git
-  location: https://github.com/input-output-hk/ouroboros-consensus
-  tag: 7bb90dfd43e350a14423ddeedb372a51e0369fe6
-  --sha256: 10idxgzbvkmnmshpga4l8mj6hv4pxxl7bpgmjsbkjxlgh73p2kqs
+  location: C:\Users\Javier\code\cardano\ouroboros-consensus
+  tag: e20aea4b758edf4912f55b8e07114fbb99b78c20
+  --sha256: 1i4zn94a694sxgqlk2gn8n9kp3n5hx3bvg41mq33psaygayvzq9n
   subdir:
    ouroboros-consensus
-   ouroboros-consensus-protocol
-   ouroboros-consensus-cardano-legacy-block
-   ouroboros-consensus-diffusion
-   ouroboros-consensus-cardano-legacy-block
    ouroboros-consensus-cardano
+   ouroboros-consensus-cardano-legacy-block
+   ouroboros-consensus-protocol
+   ouroboros-consensus-diffusion
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/iohk-monitoring-framework
+  tag: 76374ccf9a49d18a282fb5387ab99cf38b3eb5ec
+  subdir:
+    iohk-monitoring
+
 
 -- utxo-hd on 8.12.0.0
 source-repository-package

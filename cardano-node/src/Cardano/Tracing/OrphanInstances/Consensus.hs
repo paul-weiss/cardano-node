@@ -70,9 +70,10 @@ import qualified Ouroboros.Consensus.Protocol.PBFT as PBFT
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (ChunkNo (..),
                    chunkNoToInt)
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
-import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BS
-import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (PushGoal (..),
-                   PushStart (..), Pushing (..), UpdateLedgerDbTraceEvent (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.Impl.Snapshots as LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.V1.BackingStore as BS
+import           Ouroboros.Consensus.Storage.LedgerDB.API (PushGoal (..),
+                   PushStart (..), Pushing (..), TraceValidateEvent (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl as VolDb
 import           Ouroboros.Network.BlockFetch.ClientState (TraceLabelPeer (..))
 
@@ -121,10 +122,6 @@ instance ConvertRawHash blk => ConvertRawHash (Header blk) where
 --
 -- NOTE: this list is sorted by the unqualified name of the outermost type.
 
-instance HasPrivacyAnnotation LedgerDB.BackingStoreTraceByBackend
-instance HasSeverityAnnotation LedgerDB.BackingStoreTraceByBackend where
-  getSeverityAnnotation _ = Debug
-
 instance HasPrivacyAnnotation (ChainDB.TraceEvent blk)
 instance HasSeverityAnnotation (ChainDB.TraceEvent blk) where
   getSeverityAnnotation (ChainDB.TraceAddBlockEvent ev) = case ev of
@@ -151,17 +148,14 @@ instance HasSeverityAnnotation (ChainDB.TraceEvent blk) where
     ChainDB.ChainSelectionForFutureBlock{} -> Debug
     ChainDB.PipeliningEvent {} -> Debug
 
-  getSeverityAnnotation (ChainDB.TraceLedgerReplayEvent ev) = case ev of
-    LedgerDB.ReplayFromGenesis {} -> Info
-    LedgerDB.ReplayFromSnapshot {} -> Info
-    LedgerDB.ReplayedBlock {} -> Info
-
   getSeverityAnnotation (ChainDB.TraceLedgerDBEvent ev) = case ev of
     LedgerDB.LedgerDBSnapshotEvent ev' -> case ev' of
       LedgerDB.TookSnapshot {} -> Info
       LedgerDB.DeletedSnapshot {} -> Debug
       LedgerDB.InvalidSnapshot {} -> Error
-    LedgerDB.BackingStoreInitEvent {} -> Info
+    LedgerDB.LedgerReplayEvent {} -> Info
+    LedgerDB.LedgerDBForkerEvent {} -> Debug
+    LedgerDB.LedgerDBFlavorImplEvent {} -> Debug
 
   getSeverityAnnotation (ChainDB.TraceCopyToImmutableDBEvent ev) = case ev of
     ChainDB.CopiedBlockToImmutableDB {} -> Debug
@@ -490,14 +484,6 @@ instance ( ConvertRawHash blk
       => Transformable Text IO (ChainDB.TraceEvent blk) where
   trTransformer = trStructuredText
 
-instance Transformable Text IO LedgerDB.BackingStoreTraceByBackend where
-  trTransformer = trStructuredText
-
-instance HasTextFormatter LedgerDB.BackingStoreTraceByBackend where
-    formatText ev _obj = case ev of
-      LedgerDB.LMDBTrace ev' -> "LMDB: " <> showT ev'
-      LedgerDB.InMemoryTrace ev' -> "InMemory: " <> showT ev'
-
 instance ( ConvertRawHash blk
          , LedgerSupportsProtocol blk
          , InspectLedger blk)
@@ -570,26 +556,6 @@ instance ( ConvertRawHash blk
           ChainDB.TrapTentativeHeader hdr -> "Discovered trap tentative header " <> renderPointAsPhrase (blockPoint hdr)
           ChainDB.OutdatedTentativeHeader hdr -> "Tentative header is now outdated" <> renderPointAsPhrase (blockPoint hdr)
 
-      ChainDB.TraceLedgerReplayEvent ev -> case ev of
-        LedgerDB.ReplayFromGenesis _replayTo ->
-          "Replaying ledger from genesis"
-        LedgerDB.ReplayFromSnapshot _ tip' _ _ ->
-          "Replaying ledger from snapshot at " <>
-            renderRealPointAsPhrase tip'
-        LedgerDB.ReplayedBlock pt _ledgerEvents (LedgerDB.ReplayStart replayFrom) (LedgerDB.ReplayGoal replayTo) ->
-          let fromSlot = withOrigin 0 Prelude.id $ unSlotNo <$> pointSlot replayFrom
-              atSlot   = unSlotNo $ realPointSlot pt
-              atDiff   = atSlot - fromSlot
-              toSlot   = withOrigin 0 Prelude.id $ unSlotNo <$> pointSlot replayTo
-              toDiff   = toSlot - fromSlot
-          in
-             "Replayed block: slot "
-          <> showT atSlot
-          <> " out of "
-          <> showT toSlot
-          <> ". Progress: "
-          <> showProgressT (fromIntegral atDiff) (fromIntegral toDiff)
-          <> "%"
       ChainDB.TraceLedgerDBEvent ev -> case ev of
         LedgerDB.LedgerDBSnapshotEvent ev' -> case ev' of
           LedgerDB.InvalidSnapshot snap failure ->
@@ -599,11 +565,31 @@ instance ( ConvertRawHash blk
             " at " <> renderRealPointAsPhrase pt
           LedgerDB.DeletedSnapshot snap ->
             "Deleted old snapshot " <> showT snap
-        LedgerDB.BackingStoreInitEvent ev' -> case ev' of
-          LedgerDB.BackingStoreInitialisedInMemory ->
-            "Using In-Memory backing store"
-          LedgerDB.BackingStoreInitialisedLMDB limits ->
-            "Using LMDB backing store " <> showT limits
+        LedgerDB.LedgerReplayEvent ev' -> case ev' of
+          LedgerDB.TraceReplayStartEvent ev'' -> case ev'' of
+            LedgerDB.ReplayFromGenesis ->
+              "Replaying ledger from genesis"
+            LedgerDB.ReplayFromSnapshot _ (LedgerDB.ReplayStart tip') ->
+              "Replaying ledger from snapshot at " <>
+                renderPointAsPhrase tip'
+          LedgerDB.TraceReplayProgressEvent
+            (LedgerDB.ReplayedBlock pt _ledgerEvents (LedgerDB.ReplayStart replayFrom) (LedgerDB.ReplayGoal replayTo)) ->
+            let fromSlot = withOrigin 0 Prelude.id $ unSlotNo <$> pointSlot replayFrom
+                atSlot   = unSlotNo $ realPointSlot pt
+                atDiff   = atSlot - fromSlot
+                toSlot   = withOrigin 0 Prelude.id $ unSlotNo <$> pointSlot replayTo
+                toDiff   = toSlot - fromSlot
+            in
+               "Replayed block: slot "
+            <> showT atSlot
+            <> " out of "
+            <> showT toSlot
+            <> ". Progress: "
+            <> showProgressT (fromIntegral atDiff) (fromIntegral toDiff)
+            <> "%"
+        LedgerDB.LedgerDBForkerEvent ev' -> showT ev'
+        LedgerDB.LedgerDBFlavorImplEvent ev' -> showT ev'
+
       ChainDB.TraceCopyToImmutableDBEvent ev -> case ev of
         ChainDB.CopiedBlockToImmutableDB pt ->
           "Copied block " <> renderPointAsPhrase pt <> " to the ImmutableDB"
@@ -1007,19 +993,6 @@ instance ( ConvertRawHash blk
      chainLengthΔ :: AF.AnchoredFragment (Header blk) -> AF.AnchoredFragment (Header blk) -> Int
      chainLengthΔ = on (-) (fromWithOrigin (-1) . fmap (fromIntegral . unBlockNo) . AF.headBlockNo)
 
-  toObject MinimalVerbosity (ChainDB.TraceLedgerReplayEvent _ev) = mempty -- no output
-  toObject verb (ChainDB.TraceLedgerReplayEvent ev) = case ev of
-    LedgerDB.ReplayFromGenesis _replayTo ->
-      mconcat [ "kind" .= String "TraceLedgerReplayEvent.ReplayFromGenesis" ]
-    LedgerDB.ReplayFromSnapshot snap tip' _replayFrom _replayTo ->
-      mconcat [ "kind" .= String "TraceLedgerReplayEvent.ReplayFromSnapshot"
-               , "snapshot" .= toObject verb snap
-               , "tip" .= show tip' ]
-    LedgerDB.ReplayedBlock pt _ledgerEvents _ (LedgerDB.ReplayGoal replayTo)  ->
-      mconcat [ "kind" .= String "TraceLedgerReplayEvent.ReplayedBlock"
-               , "slot" .= unSlotNo (realPointSlot pt)
-               , "tip"  .= withOrigin 0 unSlotNo (pointSlot replayTo) ]
-
   toObject MinimalVerbosity (ChainDB.TraceLedgerDBEvent _ev) = mempty -- no output
   toObject verb (ChainDB.TraceLedgerDBEvent ev) = case ev of
     LedgerDB.LedgerDBSnapshotEvent ev' -> case ev' of
@@ -1034,14 +1007,25 @@ instance ( ConvertRawHash blk
         mconcat [ "kind" .= String "TraceLedgerDBEvent.LedgerDBSnapshotEvent.InvalidSnapshot"
                  , "snapshot" .= toObject verb snap
                  , "failure" .= show failure ]
-    LedgerDB.BackingStoreInitEvent ev' -> case ev' of
-      LedgerDB.BackingStoreInitialisedLMDB limits ->
-        mconcat [ "kind" .= String "TraceLedgerDBEvent.BackingStoreInitialisedLMDB"
-                , "limits" .= String (showT limits)
-                ]
-      LedgerDB.BackingStoreInitialisedInMemory ->
-        mconcat [ "kind" .= String "TraceLedgerDBEvent.BackingStoreInitialisedInMemory" ]
-
+    LedgerDB.LedgerReplayEvent ev' -> case ev' of
+      LedgerDB.TraceReplayStartEvent ev'' -> case ev'' of
+        LedgerDB.ReplayFromGenesis ->
+          mconcat [ "kind" .= String "TraceLedgerReplayEvent.ReplayFromGenesis" ]
+        LedgerDB.ReplayFromSnapshot snap tip' ->
+          mconcat [ "kind" .= String "TraceLedgerReplayEvent.ReplayFromSnapshot"
+                  , "snapshot" .= toObject verb snap
+                  , "tip" .= show tip' ]
+      LedgerDB.TraceReplayProgressEvent (LedgerDB.ReplayedBlock pt _ledgerEvents _ (LedgerDB.ReplayGoal replayTo)) ->
+        mconcat [ "kind" .= String "TraceLedgerReplayEvent.ReplayedBlock"
+                , "slot" .= unSlotNo (realPointSlot pt)
+                , "tip"  .= withOrigin 0 unSlotNo (pointSlot replayTo) ]
+    LedgerDB.LedgerDBForkerEvent (LedgerDB.TraceForkerEventWithKey k ev') ->
+      mconcat [ "kind" .= String "LedgerDBForkerEvent"
+              , "key" .= show k
+              , "event" .= show ev' ]
+    LedgerDB.LedgerDBFlavorImplEvent ev' ->
+      mconcat [ "kind" .= String "LedgerDBFlavorImplEvent"
+              , "event" .= show ev' ]
   toObject verb (ChainDB.TraceCopyToImmutableDBEvent ev) = case ev of
     ChainDB.CopiedBlockToImmutableDB pt ->
       mconcat [ "kind" .= String "TraceCopyToImmutableDBEvent.CopiedBlockToImmutableDB"
@@ -1627,12 +1611,3 @@ instance ToObject BS.BackingStoreValueHandleTrace where
   toObject _verb BS.BSVHRead          = mconcat [ "kind" .= String "BSVHRead" ]
   toObject _verb BS.BSVHStatting      = mconcat [ "kind" .= String "BSVHStatting" ]
   toObject _verb BS.BSVHStatted       = mconcat [ "kind" .= String "BSVHStatted" ]
-
-instance ToObject LedgerDB.BackingStoreTraceByBackend where
-  toObject verb ev = case ev of
-    LedgerDB.LMDBTrace ev' -> mconcat [ "backend" .= String "LMDB"
-                                      , "event" .= toObject verb ev'
-                                      ]
-    LedgerDB.InMemoryTrace ev' -> mconcat [ "backend" .= String "InMemory"
-                                          , "event" .= toObject verb ev'
-                                          ]

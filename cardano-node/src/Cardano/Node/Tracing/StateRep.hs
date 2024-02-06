@@ -34,11 +34,12 @@ import qualified Ouroboros.Consensus.Node.NetworkProtocolVersion as NPV
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LgrDb
+import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Network.Block (pointSlot)
 
 import           Cardano.Node.Handlers.Shutdown (ShutdownTrace)
 import qualified Cardano.Node.Startup as Startup
-import           Cardano.Slotting.Slot (EpochNo, SlotNo (..), WithOrigin)
+import           Cardano.Slotting.Slot (EpochNo, SlotNo (..), WithOrigin, withOrigin)
 import           Cardano.Tracing.OrphanInstances.Network ()
 
 instance FromJSON ChunkNo
@@ -55,8 +56,8 @@ data OpeningDbs
   deriving (Generic, FromJSON, ToJSON)
 
 data Replays
-  = ReplayFromGenesis  (WithOrigin SlotNo)
-  | ReplayFromSnapshot SlotNo (WithOrigin SlotNo) (WithOrigin SlotNo)
+  = ReplayFromGenesis
+  | ReplayFromSnapshot SlotNo
   | ReplayedBlock      SlotNo (WithOrigin SlotNo) (WithOrigin SlotNo)
   deriving (Generic, FromJSON, ToJSON)
 
@@ -201,14 +202,16 @@ traceNodeStateChainDB _scp tr ev =
         ChainDB.OpenedLgrDB ->
           traceWith tr $ NodeOpeningDbs OpenedLgrDB
         _ -> return ()
-    ChainDB.TraceLedgerReplayEvent ev' ->
+    ChainDB.TraceLedgerDBEvent (LedgerDB.LedgerReplayEvent ev') ->
       case ev' of
-        LgrDb.ReplayFromGenesis (LgrDb.ReplayGoal p) ->
-          traceWith tr $ NodeReplays $ ReplayFromGenesis (pointSlot p)
-        LgrDb.ReplayFromSnapshot _ (RP.RealPoint s _) (LgrDb.ReplayStart rs) (LgrDb.ReplayGoal rp) ->
-          traceWith tr $ NodeReplays $ ReplayFromSnapshot s (pointSlot rs) (pointSlot rp)
-        LgrDb.ReplayedBlock (RP.RealPoint s _) _ (LgrDb.ReplayStart rs) (LgrDb.ReplayGoal rp) ->
-          traceWith tr $ NodeReplays $ ReplayedBlock s (pointSlot rs) (pointSlot rp)
+        LedgerDB.TraceReplayStartEvent ev'' -> case ev'' of
+          LgrDb.ReplayFromGenesis ->
+            traceWith tr $ NodeReplays $ ReplayFromGenesis
+          LgrDb.ReplayFromSnapshot _ (LgrDb.ReplayStart rs) ->
+            traceWith tr $ NodeReplays $ ReplayFromSnapshot (withOrigin undefined id $ pointSlot rs)
+        LedgerDB.TraceReplayProgressEvent ev'' -> case ev'' of
+          LgrDb.ReplayedBlock (RP.RealPoint s _) _ (LgrDb.ReplayStart rs) (LgrDb.ReplayGoal rp) ->
+            traceWith tr $ NodeReplays $ ReplayedBlock s (pointSlot rs) (pointSlot rp)
     ChainDB.TraceInitChainSelEvent ev' ->
       case ev' of
         ChainDB.StartedInitChainSelection ->
