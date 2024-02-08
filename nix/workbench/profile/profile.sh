@@ -32,14 +32,12 @@ local op=${1:-$profile_default_op}; test $# -gt 0 && shift
 
 case "$op" in
     profile-names | names | list | lsp )
-        profile all-profiles | jq 'keys'
+        cardano-profile names
         ;;
 
     all-profiles | all )
-        with_era_profiles '
-          map (generate_all_era_profiles(.; null; null))
-          | add
-        ';;
+        cardano-profile all
+        ;;
 
     has-profile )
         local usage="USAGE: wb profile $op NAME"
@@ -81,6 +79,7 @@ case "$op" in
         then echo "$json"
         else jq '. * $overlay[0]' <<<$json --slurpfile overlay $preset_overlay
         fi;;
+# cardano-profile make "${name}"
 
     profile-describe | describe | pdesc | pd )
         local usage="USAGE: wb profile $op NAME"
