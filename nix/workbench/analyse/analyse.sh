@@ -126,6 +126,9 @@ do case "$1" in
        --without-datever-meta )    sargs+=($1);    locli_render+=($1); without_datever_meta='true';;
        --without-run-meta )        sargs+=($1);    locli_render+=($1);;
        --trace )                   sargs+=($1);    set -x;;
+       --latex )                   sargs+=($1 $2); locli_args+=($1 $2); locli_render+=($1 $2);
+	                           echo "analyse: found latex"
+	                           shift;;
        * ) break;; esac; shift; done
 
 local op=${1:-$analyse_default_op}; if test $# != 0; then shift; fi
@@ -463,8 +466,14 @@ EOF
         for v in "${vw[@]}"
         do eval ops_final+=($v); done
 
+	echo "analyse call case: about to call_locli"
         call_locli "$rtsmode" "${ops_final[@]}"
+	locli_ret=$?
+	if [ $locli_ret -ne 0 ]
+	then echo "analyse call case: call_locli failed with retcode $locli_ret"
+	fi
 
+	echo "analyse call case: generating analysis_jsons"
         local analysis_jsons=($(ls $adir/*.json |
                                     fgrep -v -e '.flt.json'             \
                                              -e '.logobjs.json'         \
@@ -475,10 +484,12 @@ EOF
                                              -e 'prof.json'             \
                                              -e 'tracefreq.json'
               ))
+	echo "analyse call case: prettifying JSON data"
         progress "analyse" "prettifying JSON data:  ${#analysis_jsons[*]} files"
         verbose  "analyse" "prettifying JSON data:  ${analysis_jsons[*]}"
         json_compact_prettify "${analysis_jsons[@]}"
 
+	echo "analyse call case: run set-identifier"
         if test -n "$ident"
         then run set-identifier "$run" "$ident"
         fi
@@ -486,6 +497,7 @@ EOF
         ;;
 
     multi-call )
+	echo "analyse multi-call: entering"
         local usage="USAGE: wb analyse $op SUFFIX \"RUN-NAMES..\" OPS.."
 
         local suffix=${1:?$usage}; shift
@@ -518,6 +530,7 @@ EOF
         ln -sf "$run" "$runs/current"
         progress "analysis | multi-call" "output $(yellow $run), inputs: $(white ${runs[*]})"
 
+	echo "analysis multi-call: about to examine arguments $@"
         local v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 va vb vc vd ve vf vg vh vi vj vk vl vm vn vo
         v0=("$@")
         v1=(${v0[*]/#read-clusterperfs/ 'read-clusterperfs' ${cperfs[*]}    })
@@ -538,27 +551,52 @@ EOF
         vg=(${vf[*]/#multi-propagation-endtoend/ 'render-multi-propagation' --org-report $adir/'blockprop.endtoend.org' --end-to-end $multi_aspect })
         vh=(${vg[*]/#multi-propagation-gnuplot/  'render-multi-propagation' --gnuplot $adir/cdf/'%s.cdf' --full $multi_aspect })
         vi=(${vh[*]/#multi-propagation-full/     'render-multi-propagation' --pretty $adir/'blockprop-full.txt' --full $multi_aspect })
-        vj=(${vi[*]/#compare/ 'compare' --ede nix/workbench/ede --report $adir/report-$run.org ${compares[*]} })
-        vk=(${vj[*]/#update/  'compare' --ede nix/workbench/ede --report $adir/report-$run.org ${compares[*]} --template $adir/report-$run.ede })
+	echo "analyse multi-call: about to consider latex vs. ede"
+	echo "analyse multi-call: considering ${sargs[*]}"
+	if [[ "${sargs[*]}" == *"latex"* ]] || [[ "${vi[*]}" == *"latex"* ]]
+	then
+            echo "analyse multi-call: found --latex"
+            vj=(${vi[*]/#compare/ 'compare' --latex nix/workbench/latex --report $adir/report-$run.latex ${compares[*]} })
+            vk=(${vj[*]/#update/  'compare' --latex nix/workbench/latex --report $adir/report-$run.latex ${compares[*]} --template $adir/report-$run.ede })
+            echo "analyse multi-call: finished --latex case"
+        else
+	    echo "analyse multi-call: found or defaulting to ede"
+	    for word in ${vi[@]}
+            do
+                echo "analyse multi-call: found latex in ede case as $word"
+            done
+            vj=(${vi[*]/#compare/ 'compare' --ede nix/workbench/ede --report $adir/report-$run.org ${compares[*]} })
+            vk=(${vj[*]/#update/  'compare' --ede nix/workbench/ede --report $adir/report-$run.org ${compares[*]} --template $adir/report-$run.ede })
+	    echo "analyse multi-call: finished ede case"
+	fi
+	echo "analyse multi-call: finished considering latex vs. ede"
         vl=(${vk[*]/#multi-summary-json/            'render-multi-summary' --json $adir/'summary.json' })
         vm=(${vl[*]/#multi-summary-latex/            'render-multi-summary' --latex $adir/'summary.latex' })
         vn=(${vm[*]/#multi-summary-report/          'render-multi-summary' --org-report $adir/'summary.org' })
         vo=(${vn[@]/#write-context/                 'write-meta-genesis'   --run-metafile    $dir/meta.json --shelley-genesis $dir/genesis-shelley.json })
         local ops_final=(${vo[*]})
 
+	echo "analyse multi-call case: about to call_locli"
         call_locli "$rtsmode" "${ops_final[@]}"
+	locli_ret=$?
+	if [ $locli_ret -ne 0 ]
+	then echo "analyse multi-call case: call_locli failed with retcode $locli_ret"
+	fi
 
+	echo "analyse multi-call case: run setid $run ${idents_uniq[0]}"
         if test ${#idents_uniq[*]} = 1
         then run setid $run ${idents_uniq[0]}
         fi
         progress "report | output" "run:  $(white $run)  $(blue ident:)  $(white ${idents_uniq[*]})"
 
+	echo "analyse multi-call case: analyse pdf"
         if test -n "$pdf"
         then progress "report | pdf" "PDF output requested, running 'em'.."
              analyse pdf $run
         else progress "report | hint" "did you want to pass $(white --pdf) to $(white wb analyse)?"
              progress "report | hint" "you still can feed this run into $(white wb pdf).."
         fi
+	echo "analyse multi-call case: finished case"
         ;;
 
     prepare | prep )
@@ -759,6 +797,7 @@ call_locli() {
     local rtsmode="${1:-hipar}"; shift
     local args=("$@")
 
+    echo "call_locli: entering"
     echo "{ \"rtsmode\": \"$rtsmode\" }"
     case "$rtsmode" in
         serial )locli_args+=(+RTS -N1 -A128M -RTS);;
@@ -767,8 +806,18 @@ call_locli() {
         * )     fail "unknown rtsmode: $rtsmode";;
     esac
 
+    echo "call_locli: about to locli help"
+    locli --help
+    echo "call_locli: about to locli"
     verbose "analysis | locli" "$(with_color reset ${locli_args[@]}) $(colorise ${args[*]})"
     time locli "${locli_args[@]}" "${args[@]}"
+    locli_ret=$?
+    echo "call_locli: returned from locli"
+    if [ $locli_ret -ne 0 ]
+    then echo "call_locli: locli errored with return code $locli_ret"
+    fi
+    echo "call_locli: returning $locli_ret"
+    return $locli_ret
 }
 
 num_jobs="\j"
