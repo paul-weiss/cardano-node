@@ -303,7 +303,11 @@ main() {
         profile      | profiles | prof | ps | p )
                                   profile             "$@";;
         run          | runs | r ) run                 "$@";;
-        analyse      | a )        analyse             "$@";;
+        analyse      | a )        echo "about to analyse"
+                                  analyse             "$@"
+				  analyse_ret=$?
+				  echo "return from analyse"
+				  return $analyse_ret;;
         publish      | u )        publish             "$@";;
 
         ## Public, internals-y:
