@@ -829,7 +829,7 @@ runChainCommand s c@(Compare (InputDir dir) mTmpl outf@(TextOutputFile outfp) ru
       let writef (fp, txt) = withFile fp WriteMode $
             \hnd -> T.hPutStrLn hnd txt
       mapM_ writef $
-        map (first (</> "latex"))
+        map (first (<> ".latex"))
                    [ ("titling",  titling)
                    , ("summary",  summary)
                    , ("resource", resource)
