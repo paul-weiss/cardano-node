@@ -237,9 +237,9 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
   pure (titlingText ctx, summaryText, resourceText, anomalyText, forgingText, peersText)
   where
    resourceText = unlines resourceLines
-   anomalyText = ""
-   forgingText = ""
-   peersText = ""
+   anomalyText = unlines anomalyLines
+   forgingText = unlines forgingLines
+   peersText = unlines peersLines
    fmtTime = T.pack . formatTime defaultTimeLocale rfc822DateFormat
    metas :: [Metadata]
    metas = sumMeta summ : fmap (\(SomeSummary ss, _, _) -> sumMeta ss) rest
@@ -271,6 +271,12 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
                                       <- cdfFields
                         , dFields mtFieldsReport fld]
                   -}
+   anomalyLines :: [Text]
+   anomalyLines = (mkLines :: ((Field DSelect p BlockProp) -> Bool) -> [Text]) (dFields bpFieldsControl)
+   forgingLines :: [Text]
+   forgingLines = (mkLines :: ((Field DSelect p BlockProp) -> Bool) -> [Text]) (dFields bpFieldsForger)
+   peersLines :: [Text]
+   peersLines = (mkLines :: ((Field DSelect p BlockProp) -> Bool) -> [Text]) (dFields bpFieldsPeers)
    resourceLines :: [Text]
    resourceLines = (mkLines :: ((Field DSelect p MachPerf) -> Bool) -> [Text]) (dFields mtFieldsReport) {-
      [ "\\begin{tabular}{c" <> List.foldr1 (<>) (map (const "|r") resourceFields) <> "}"]
