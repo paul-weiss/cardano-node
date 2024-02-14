@@ -303,7 +303,7 @@ main() {
         profile      | profiles | prof | ps | p )
                                   profile             "$@";;
         run          | runs | r ) run                 "$@";;
-        analyse      | a )        echo "about to analyse"
+        analyse      | a )        echo "about to analyse args=$@"
                                   analyse             "$@"
 				  analyse_ret=$?
 				  echo "return from analyse"
