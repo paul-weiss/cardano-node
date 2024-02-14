@@ -89,7 +89,7 @@ analyse_default_op='standard'
 analyse() {
 local sargs=()
 local arg_filters=() filter_exprs=() unfiltered=
-local dump_logobjects= dump_machviews= dump_chain= dump_slots_raw= dump_slots= without_datever_meta= pdf=
+local dump_logobjects= dump_machviews= dump_chain= dump_slots_raw= dump_slots= without_datever_meta= pdf= latex=
 local multi_aspect='--inter-cdf' rtsmode=
 local locli_render=() locli_timeline=()
 locli_args=()
@@ -101,7 +101,9 @@ fi
 
 progress "analyse" "args:  $(yellow $*)"
 while test $# -gt 0
-do case "$1" in
+do
+    echo "analyse: arg parse loop start $# args left"
+    case "$1" in
        --filters | -f )           sargs+=($1 "$2"); analysis_add_filters "--filters" 'arg_filters' "unitary,$2"; shift;;
        --filter-expr | -fex )     sargs+=($1 "$2"); filter_exprs+=($2); shift;;
        --filter-block-expr | -fbex ) sargs+=($1 "$2"); filter_exprs+=('{ "tag":"CBlock" , "contents": '"$2"'}'); shift;;
@@ -126,10 +128,14 @@ do case "$1" in
        --without-datever-meta )    sargs+=($1);    locli_render+=($1); without_datever_meta='true';;
        --without-run-meta )        sargs+=($1);    locli_render+=($1);;
        --trace )                   sargs+=($1);    set -x;;
-       --latex )                   sargs+=($1 $2); locli_args+=($1 $2); locli_render+=($1 $2);
-	                           echo "analyse: found latex"
-	                           shift;;
-       * ) break;; esac; shift; done
+       --latex )                   sargs+=($1);
+                                   latex='yes-please';
+	                           echo "analyse: found latex";;
+       * ) break;;
+    esac;
+    shift;
+    echo "analyse: arg parse end loop $# args left"
+done
 
 local op=${1:-$analyse_default_op}; if test $# != 0; then shift; fi
 
@@ -141,6 +147,7 @@ fi
 
 verbose "analyse" "op:    $(yellow $op)"
 verbose "analyse" "sargs: $(yellow ${sargs[*]})"
+echo "analyse: about to start op case stmt"
 
 case "$op" in
     # 'read-mach-views' "${logs[@]/#/--log }"
@@ -552,8 +559,9 @@ EOF
         vh=(${vg[*]/#multi-propagation-gnuplot/  'render-multi-propagation' --gnuplot $adir/cdf/'%s.cdf' --full $multi_aspect })
         vi=(${vh[*]/#multi-propagation-full/     'render-multi-propagation' --pretty $adir/'blockprop-full.txt' --full $multi_aspect })
 	echo "analyse multi-call: about to consider latex vs. ede"
-	echo "analyse multi-call: considering ${sargs[*]}"
-	if [[ "${sargs[*]}" == *"latex"* ]] || [[ "${vi[*]}" == *"latex"* ]]
+	echo "analyse multi-call: considering sargs=${sargs[*]}"
+	echo "analyse multi-call: considering vi=${vi[*]}"
+	if [[ "$latex" == "yes-please" ]]
 	then
             echo "analyse multi-call: found --latex"
             vj=(${vi[*]/#compare/ 'compare' --latex nix/workbench/latex --report $adir/report-$run.latex ${compares[*]} })
