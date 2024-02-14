@@ -72,6 +72,7 @@ import           Cardano.BM.Data.Tracer (ToLogObject (..), TracingVerbosity (..)
 import           Cardano.BM.Data.Transformers (setHostname)
 import           Cardano.BM.Trace
 import           Paths_cardano_node (version)
+import Debug.Trace (traceMarkerIO)
 
 import qualified Cardano.Crypto.Init as Crypto
 
@@ -192,6 +193,7 @@ installSigTermHandler = do
   _ <- Signals.installHandler
     Signals.sigTERM
     (Signals.CatchOnce $ do
+      traceMarkerIO "SIGTERM received"
       runThreadIdMay <- deRefWeak runThreadIdWk
       forM_ runThreadIdMay $ \runThreadId -> killThread runThreadId
     )

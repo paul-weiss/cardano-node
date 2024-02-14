@@ -538,7 +538,7 @@ teeTraceChainTipElide
   -> MVar (Maybe (WithSeverity (ChainDB.TraceEvent blk)), Integer)
   -> Trace IO Text
   -> Tracer IO (WithSeverity (ChainDB.TraceEvent blk))
-teeTraceChainTipElide = elideToLogObject' Info
+teeTraceChainTipElide = elideToLogObject
 {-# INLINE teeTraceChainTipElide #-}
 
 ignoringSeverity :: Tracer IO a -> Tracer IO (WithSeverity a)

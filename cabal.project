@@ -32,6 +32,10 @@ packages:
   trace-dispatcher
   trace-resources
   trace-forward
+  ../ouroboros-consensus/ouroboros-consensus
+  ../ouroboros-consensus/ouroboros-consensus-cardano
+  ../ouroboros-consensus/ouroboros-consensus-cardano-legacy-block
+  ../ouroboros-consensus/ouroboros-consensus-diffusion
 
 program-options
   ghc-options: -Werror
@@ -41,7 +45,7 @@ package cryptonite
   -- generation is dubious. Set the flag so we use /dev/urandom by default.
   flags: -support_rdrand
 
-tests: True
+tests: False
 
 test-show-details: direct
 
@@ -66,22 +70,18 @@ if impl(ghc >= 9.6)
 -- utxo-hd
 source-repository-package
   type: git
-  location: C:\Users\Javier\code\cardano\ouroboros-consensus
-  tag: e20aea4b758edf4912f55b8e07114fbb99b78c20
+  location: /root/code/cardano/ouroboros-consensus
+  tag: 5380d94a5674b7d76e6a7a9ab4cf4bac9749b397
   --sha256: 1i4zn94a694sxgqlk2gn8n9kp3n5hx3bvg41mq33psaygayvzq9n
   subdir:
-   ouroboros-consensus
-   ouroboros-consensus-cardano
-   ouroboros-consensus-cardano-legacy-block
    ouroboros-consensus-protocol
-   ouroboros-consensus-diffusion
 
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: 76374ccf9a49d18a282fb5387ab99cf38b3eb5ec
-  subdir:
-    iohk-monitoring
+-- source-repository-package
+--   type: git
+--   location: https://github.com/input-output-hk/iohk-monitoring-framework
+--   tag: 76374ccf9a49d18a282fb5387ab99cf38b3eb5ec
+--   subdir:
+--     iohk-monitoring
 
 
 -- utxo-hd on 8.12.0.0

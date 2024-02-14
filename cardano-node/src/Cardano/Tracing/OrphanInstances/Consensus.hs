@@ -18,6 +18,7 @@
 
 module Cardano.Tracing.OrphanInstances.Consensus () where
 
+import Ouroboros.Network.Block (MaxSlotNo(..))
 import           Cardano.Prelude (maximumDef)
 import           Data.Aeson (Value (..))
 import qualified Data.Aeson as Aeson
@@ -154,7 +155,7 @@ instance HasSeverityAnnotation (ChainDB.TraceEvent blk) where
       LedgerDB.DeletedSnapshot {} -> Debug
       LedgerDB.InvalidSnapshot {} -> Error
     LedgerDB.LedgerReplayEvent {} -> Info
-    LedgerDB.LedgerDBForkerEvent {} -> Debug
+    LedgerDB.LedgerDBForkerEvent {} -> Info
     LedgerDB.LedgerDBFlavorImplEvent {} -> Debug
 
   getSeverityAnnotation (ChainDB.TraceCopyToImmutableDBEvent ev) = case ev of
@@ -169,7 +170,7 @@ instance HasSeverityAnnotation (ChainDB.TraceEvent blk) where
     ChainDB.OpenedDB {} -> Info
     ChainDB.ClosedDB {} -> Info
     ChainDB.OpenedImmutableDB {} -> Info
-    ChainDB.OpenedVolatileDB -> Info
+    ChainDB.OpenedVolatileDB {} -> Info
     ChainDB.OpenedLgrDB -> Info
     ChainDB.StartedOpeningDB -> Info
     ChainDB.StartedOpeningImmutableDB -> Info
@@ -219,6 +220,7 @@ instance HasSeverityAnnotation (ChainDB.TraceEvent blk) where
     VolDb.BlockAlreadyHere{}    -> Debug
     VolDb.Truncate{}            -> Error
     VolDb.InvalidFileNames{}    -> Warning
+    VolDb.DBClosed{}            -> Info
 
 instance HasSeverityAnnotation (LedgerEvent blk) where
   getSeverityAnnotation (LedgerUpdate _)  = Notice
@@ -526,7 +528,7 @@ instance ( ConvertRawHash blk
           ChainDB.InvalidBlock err pt ->
             "Invalid block " <> renderRealPointAsPhrase pt <> ": " <> showT err
           ChainDB.ValidCandidate c ->
-            "Valid candidate " <> renderPointAsPhrase (AF.headPoint c)
+            "Valid candidate spanning from " <> renderPointAsPhrase (AF.lastPoint c) <> " to " <> renderPointAsPhrase (AF.headPoint c)
           ChainDB.CandidateContainsFutureBlocks c hdrs ->
             "Candidate contains blocks from near future:  " <>
             renderPointAsPhrase (AF.headPoint c) <> ", slots " <>
@@ -614,7 +616,9 @@ instance ( ConvertRawHash blk
         ChainDB.OpenedImmutableDB immTip chunk ->
           "Opened imm db with immutable tip at " <> renderPointAsPhrase immTip <>
           " and chunk " <> showT chunk
-        ChainDB.OpenedVolatileDB ->  "Opened vol db"
+        ChainDB.OpenedVolatileDB mx ->  "Opened " <> case mx of
+          NoMaxSlotNo -> "empty Volatile DB"
+          MaxSlotNo mxx -> "Volatile DB with max slot seen " <> showT mxx
         ChainDB.OpenedLgrDB ->  "Opened lgr db"
       ChainDB.TraceFollowerEvent ev -> case ev of
         ChainDB.NewFollower ->  "New follower was created"
@@ -626,7 +630,7 @@ instance ( ConvertRawHash blk
         ChainDB.InitalChainSelected -> "Initial chain selected"
         ChainDB.InitChainSelValidation e -> case e of
           ChainDB.InvalidBlock _err _pt -> "Invalid block found during Initial chain selection, truncating the candidate and retrying to select a best candidate."
-          ChainDB.ValidCandidate af     -> "Valid candidate at tip " <> renderPointAsPhrase (AF.lastPoint af)
+          ChainDB.ValidCandidate af     -> "Valid candidate spanning from " <> renderPointAsPhrase (AF.lastPoint af) <> " to " <> renderPointAsPhrase (AF.headPoint af)
           ChainDB.CandidateContainsFutureBlocks {} -> "Found a candidate containing future blocks during Initial chain selection, truncating the candidate and retrying to select a best candidate."
           ChainDB.CandidateContainsFutureBlocksExceedingClockSkew {} -> "Found a candidate containing future blocks exceeding clock skew during Initial chain selection, truncating the candidate and retrying to select a best candidate."
           ChainDB.UpdateLedgerDbTraceEvent (StartedPushingBlockToTheLedgerDb (PushStart start) (PushGoal goal) (Pushing curr)) ->
@@ -727,6 +731,7 @@ instance ( ConvertRawHash blk
         VolDb.BlockAlreadyHere bh   -> "Block " <> showT bh <> " was already in the Volatile DB."
         VolDb.Truncate e pth offs   -> "Truncating the file at " <> showT pth <> " at offset " <> showT offs <> ": " <> showT e
         VolDb.InvalidFileNames fs   -> "Invalid Volatile DB files: " <> showT fs
+        VolDb.DBClosed{}            -> "Closed Volatile DB."
      where showProgressT :: Int -> Int -> Text
            showProgressT chunkNo outOf =
              pack (showFFloat (Just 2) (100 * fromIntegral chunkNo / fromIntegral outOf :: Float) mempty)
@@ -1063,7 +1068,7 @@ instance ( ConvertRawHash blk
       mconcat [ "kind" .= String "TraceOpenEvent.OpenedImmutableDB"
                , "immtip" .= toObject verb immTip
                , "epoch" .= String ((pack . show) epoch) ]
-    ChainDB.OpenedVolatileDB ->
+    ChainDB.OpenedVolatileDB {} ->
       mconcat [ "kind" .= String "TraceOpenEvent.OpenedVolatileDB" ]
     ChainDB.OpenedLgrDB ->
       mconcat [ "kind" .= String "TraceOpenEvent.OpenedLgrDB" ]
@@ -1212,6 +1217,7 @@ instance ( ConvertRawHash blk
       mconcat [ "kind" .= String "TraceVolatileDBEvent.InvalidFileNames"
                , "files" .= String (Text.pack . show $ map show fsPaths)
                ]
+    VolDb.DBClosed -> mconcat [ "kind" .= String "TraceVolatileDBEvent.DBClosed" ]
 
 instance ConvertRawHash blk => ToObject (ImmDB.TraceChunkValidation blk ChunkNo) where
   toObject verb ev = case ev of

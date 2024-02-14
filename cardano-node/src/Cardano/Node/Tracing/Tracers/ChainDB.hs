@@ -29,6 +29,7 @@ import           Cardano.Node.Tracing.Era.Shelley ()
 import           Cardano.Node.Tracing.Formatting ()
 import           Cardano.Node.Tracing.Render
 
+import Ouroboros.Network.Block (MaxSlotNo(..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HeaderEnvelopeError (..), HeaderError (..),
                    OtherHeaderEnvelopeError)
@@ -1116,7 +1117,9 @@ instance ConvertRawHash blk
   forHuman (ChainDB.OpenedImmutableDB immTip chunk) =
           "Opened imm db with immutable tip at " <> renderPointAsPhrase immTip <>
           " and chunk " <> showT chunk
-  forHuman ChainDB.OpenedVolatileDB = "Opened vol db"
+  forHuman (ChainDB.OpenedVolatileDB mx) = "Opened " <> case mx of
+          NoMaxSlotNo -> "empty Volatile DB"
+          MaxSlotNo mxx -> "Volatile DB with max slot seen " <> showT mxx
   forHuman ChainDB.OpenedLgrDB = "Opened lgr db"
   forHuman ChainDB.StartedOpeningDB = "Started opening Chain DB"
   forHuman ChainDB.StartedOpeningImmutableDB = "Started opening Immutable DB"
@@ -1135,7 +1138,7 @@ instance ConvertRawHash blk
     mconcat [ "kind" .= String "OpenedImmutableDB"
              , "immtip" .= forMachine dtal immTip
              , "epoch" .= String ((Text.pack . show) epoch) ]
-  forMachine _dtal ChainDB.OpenedVolatileDB =
+  forMachine _dtal ChainDB.OpenedVolatileDB {} =
       mconcat [ "kind" .= String "OpenedVolatileDB" ]
   forMachine _dtal ChainDB.OpenedLgrDB =
       mconcat [ "kind" .= String "OpenedLgrDB" ]
@@ -2031,17 +2034,22 @@ instance StandardHash blk => LogFormatting (VolDB.TraceEvent blk) where
       mconcat [ "kind" .= String "InvalidFileNames"
                , "files" .= String (Text.pack . show $ map show fsPaths)
               ]
+    forMachine _dtal VolDB.DBClosed =
+      mconcat [ "kind" .= String "DBClosed"
+              ]
 
 instance MetaTrace (VolDB.TraceEvent blk) where
     namespaceFor VolDB.DBAlreadyClosed {} = Namespace [] ["DBAlreadyClosed"]
     namespaceFor VolDB.BlockAlreadyHere {} = Namespace [] ["BlockAlreadyHere"]
     namespaceFor VolDB.Truncate {} = Namespace [] ["Truncate"]
     namespaceFor VolDB.InvalidFileNames {} = Namespace [] ["InvalidFileNames"]
+    namespaceFor VolDB.DBClosed {} = Namespace [] ["DBClosed"]
 
     severityFor  (Namespace _ ["DBAlreadyClosed"]) _ = Just Debug
     severityFor  (Namespace _ ["BlockAlreadyHere"]) _ = Just Debug
     severityFor  (Namespace _ ["Truncate"]) _ = Just Debug
     severityFor  (Namespace _ ["InvalidFileNames"]) _ = Just Debug
+    severityFor  (Namespace _ ["DBClosed"]) _ = Just Info
     severityFor _ _ = Nothing
 
     documentFor  (Namespace _ ["DBAlreadyClosed"]) = Just
@@ -2052,6 +2060,8 @@ instance MetaTrace (VolDB.TraceEvent blk) where
       "Truncates a file up to offset because of the error."
     documentFor  (Namespace _ ["InvalidFileNames"]) = Just
       "Reports a list of invalid file paths."
+    documentFor  (Namespace _ ["DBClosed"]) = Just
+      "Closing the Volatile DB."
     documentFor _ = Nothing
 
     allNamespaces =
@@ -2059,6 +2069,7 @@ instance MetaTrace (VolDB.TraceEvent blk) where
       , Namespace [] ["BlockAlreadyHere"]
       , Namespace [] ["Truncate"]
       , Namespace [] ["InvalidFileNames"]
+      , Namespace [] ["DBClosed"]
       ]
 
 
