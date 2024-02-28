@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -20,15 +22,25 @@ module Cardano.Testnet.Test.LedgerEvents.Gov.ProposeNewConstitution
 
 import           Cardano.Api as Api
 import           Cardano.Api.Error (displayError)
+import           Cardano.Api.Ledger
 import           Cardano.Api.Shelley
 
+import qualified Cardano.Ledger.Address as L
+import qualified Cardano.Ledger.Api.State.Query as L
 import qualified Cardano.Ledger.Conway.Governance as Ledger
+import qualified Cardano.Ledger.DRep as L
+import qualified Cardano.Ledger.Shelley.API.Wallet as L
+import qualified Cardano.Ledger.UTxO as L
 import           Cardano.Testnet
 
 import           Prelude
 
 import           Control.Monad
+import           Control.Monad.State.Strict (StateT)
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Lazy.Char8 as C8
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import           Data.String
 import qualified Data.Text as Text
 import           Data.Word
@@ -313,7 +325,8 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
 
   let delegatorStakeVkeyFp :: Int -> FilePath
       delegatorStakeVkeyFp n = tempAbsPath' </> "stake-delegators" </> ("delegator" <> show n) </> "staking.vkey"
-
+      delegatorPaymentVkeyFp :: Int -> FilePath
+      delegatorPaymentVkeyFp n = tempAbsPath' </> "stake-delegators" </> ("delegator" <> show n) </> "payment.vkey"
       delegatorStakeSkeyFp :: Int -> FilePath
       delegatorStakeSkeyFp n = tempAbsPath' </> "stake-delegators" </> ("delegator" <> show n) </> "staking.skey"
 
@@ -357,6 +370,49 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     [  convertToEraString cEra, "transaction", "submit"
     , "--tx-file", voteDelegTxFp
     ]
+
+  delegatorPaymentAddrStr <- filter (/= '\n')
+                          <$> H.execCli' execConfig
+                                [ "address", "build"
+                                , "--payment-verification-key-file", delegatorPaymentVkeyFp 1
+                                ]
+  delegatorPaymentAddr <- evalEither $ deserialiseFromBech32 (AsAddress AsShelleyAddr)
+                                     $ Text.pack delegatorPaymentAddrStr
+  drepStakeVKeyHashStr <- filter (/= '\n')
+                          <$> H.execCli' execConfig
+                                [ convertToEraString cEra, "governance", "drep", "id"
+                                , "--drep-verification-key-file", drepVkeyFp 1
+                                ]
+  drepStakeVKeyHash <- evalEither $ Aeson.eitherDecode $ C8.pack drepStakeVKeyHashStr
+  result <- runExceptT $
+              foldEpochState
+                (File configurationFile)
+                (Api.File socketPath)
+                Api.QuickValidation
+                (EpochNo 30)
+                ()
+                (checkVotingStakeDelegatedSuccessfully delegatorPaymentAddr drepStakeVKeyHash)
+  void $ evalEither result
+
+checkVotingStakeDelegatedSuccessfully
+  :: Address ShelleyAddr -- ^ Payment address of delegator
+  -> L.DRep StandardCrypto -- ^ DRep credential
+  -> AnyNewEpochState
+  -> StateT () IO LedgerStateCondition
+checkVotingStakeDelegatedSuccessfully (ShelleyAddress nw pc scr) drepCred (AnyNewEpochState sbe newEpochState) =
+  caseShelleyToBabbageOrConwayEraOnwards
+  (const $ error "checkVotingStakeDelegatedSuccessfully: Only conway era supported")
+
+  (const $ case Map.lookup drepCred $ L.queryDRepStakeDistr newEpochState (Set.singleton drepCred) of
+             Nothing -> return ConditionNotMet
+             Just delegatedVoteStakeAmount -> do
+               let ledgerAddr = L.Addr nw pc scr
+                   utxo = L.coinBalance $ L.getFilteredUTxO newEpochState $ Set.singleton ledgerAddr
+               if utxo == delegatedVoteStakeAmount
+               then return ConditionMet
+               else return ConditionNotMet
+
+  ) sbe
 
 
 foldBlocksCheckProposalWasSubmitted
