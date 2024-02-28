@@ -314,6 +314,9 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
   let delegatorStakeVkeyFp :: Int -> FilePath
       delegatorStakeVkeyFp n = tempAbsPath' </> "stake-delegators" </> ("delegator" <> show n) </> "staking.vkey"
 
+      delegatorStakeSkeyFp :: Int -> FilePath
+      delegatorStakeSkeyFp n = tempAbsPath' </> "stake-delegators" </> ("delegator" <> show n) </> "staking.skey"
+
       voteDelegationCertFp :: Int -> FilePath
       voteDelegationCertFp n = voteDelegationDir </> "certificate-" <> show n
 
@@ -322,6 +325,37 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     , "--stake-verification-key-file", delegatorStakeVkeyFp 1
     , "--drep-verification-key-file", drepVkeyFp 1
     , "--out-file", voteDelegationCertFp 1
+    ]
+
+
+  txin4 <- findLargestUtxoForPaymentKey epochStateView sbe $ wallets !! 0
+
+  voteDelegTxFp <- H.note $ work </> gov </> "vote-delegation.tx"
+  voteDelegTxBodyFp <- H.note $ work </> gov </> "vote-delegation.txbody"
+
+  -- Submit votes
+  void $ H.execCli' execConfig
+    [  convertToEraString cEra, "transaction", "build"
+    , "--change-address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 0
+    , "--tx-in", Text.unpack $ renderTxIn txin4
+    , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 1)) <> "+" <> show @Int 3_000_000
+    , "--certificate-file", voteDelegationCertFp 1
+    , "--witness-override", show @Int 2
+    , "--out-file", voteDelegTxBodyFp
+    ]
+
+
+  void $ H.execCli' execConfig
+    [  convertToEraString cEra, "transaction", "sign"
+    , "--tx-body-file", voteDelegTxBodyFp
+    , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ wallets !! 0
+    , "--signing-key-file", delegatorStakeSkeyFp 1
+    , "--out-file", voteDelegTxFp
+    ]
+
+  void $ H.execCli' execConfig
+    [  convertToEraString cEra, "transaction", "submit"
+    , "--tx-file", voteDelegTxFp
     ]
 
 
