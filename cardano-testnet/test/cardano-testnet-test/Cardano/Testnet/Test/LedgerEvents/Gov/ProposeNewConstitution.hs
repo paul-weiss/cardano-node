@@ -37,6 +37,7 @@ import           GHC.Stack (HasCallStack, callStack)
 import           Lens.Micro
 import           System.FilePath ((</>))
 
+import           Testnet.Components.Configuration
 import           Testnet.Components.Query
 import qualified Testnet.Process.Cli as P
 import qualified Testnet.Process.Run as H
@@ -104,12 +105,12 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
   H.writeFile proposalAnchorFile "dummy anchor data"
   H.writeFile consitutionFile "dummy constitution data"
   constitutionHash <- H.execCli' execConfig
-    [ "conway", "governance"
+    [ convertToEraString cEra, "governance"
     , "hash", "anchor-data", "--file-text", consitutionFile
     ]
 
   proposalAnchorDataHash <- H.execCli' execConfig
-    [ "conway", "governance"
+    [  convertToEraString cEra, "governance"
     , "hash", "anchor-data", "--file-text", proposalAnchorFile
     ]
 
@@ -132,7 +133,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
       drepCertFile n = gov </> "drep-keys" <>"drep" <> show n <> ".regcert"
   forM_ [1..3] $ \n -> do
     H.execCli' execConfig
-       [ "conway", "governance", "drep", "registration-certificate"
+       [  convertToEraString cEra, "governance", "drep", "registration-certificate"
        , "--drep-verification-key-file", drepVkeyFp n
        , "--key-reg-deposit-amt", show @Int 0
        , "--out-file", drepCertFile n
@@ -145,7 +146,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
   drepRegTxSignedFp <- H.note $ work </> "drep.registration.tx"
 
   void $ H.execCli' execConfig
-    [ "conway", "transaction", "build"
+    [  convertToEraString cEra, "transaction", "build"
     , "--change-address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 0
     , "--tx-in", Text.unpack $ renderTxIn txin1
     , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 1)) <> "+" <> show @Int 5_000_000
@@ -157,7 +158,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     ]
 
   void $ H.execCli' execConfig
-    [ "conway", "transaction", "sign"
+    [  convertToEraString cEra, "transaction", "sign"
     , "--tx-body-file", drepRegTxbodyFp
     , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ wallets !! 0
     , "--signing-key-file", drepSKeyFp 1
@@ -167,14 +168,14 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     ]
 
   void $ H.execCli' execConfig
-    [ "conway", "transaction", "submit"
+    [  convertToEraString cEra, "transaction", "submit"
     , "--tx-file", drepRegTxSignedFp
     ]
 
   -- Create constitution proposal
 
   void $ H.execCli' execConfig
-    [ "conway", "governance", "action", "create-constitution"
+    [  convertToEraString cEra, "governance", "action", "create-constitution"
     , "--testnet"
     , "--governance-action-deposit", show @Int 0 -- TODO: Get this from the node
     , "--deposit-return-stake-verification-key-file", stakeVkeyFp
@@ -191,7 +192,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
   txin2 <- findLargestUtxoForPaymentKey epochStateView sbe $ wallets !! 1
 
   void $ H.execCli' execConfig
-    [ "conway", "transaction", "build"
+    [  convertToEraString cEra, "transaction", "build"
     , "--change-address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 1
     , "--tx-in", Text.unpack $ renderTxIn txin2
     , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 0)) <> "+" <> show @Int 5_000_000
@@ -200,14 +201,14 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     ]
 
   void $ H.execCli' execConfig
-    [ "conway", "transaction", "sign"
+    [  convertToEraString cEra, "transaction", "sign"
     , "--tx-body-file", txbodyFp
     , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ wallets !! 1
     , "--out-file", txbodySignedFp
     ]
 
   void $ H.execCli' execConfig
-    [ "conway", "transaction", "submit"
+    [  convertToEraString cEra, "transaction", "submit"
     , "--tx-file", txbodySignedFp
     ]
 
@@ -241,7 +242,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
   -- Proposal was successfully submitted, now we vote on the proposal and confirm it was ratified
   forM_ [1..3] $ \n -> do
     H.execCli' execConfig
-      [ "conway", "governance", "vote", "create"
+      [  convertToEraString cEra, "governance", "vote", "create"
       , "--yes"
       , "--governance-action-tx-id", txidString
       , "--governance-action-index", show @Word32 governanceActionIndex
@@ -258,7 +259,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
 
   -- Submit votes
   void $ H.execCli' execConfig
-    [ "conway", "transaction", "build"
+    [  convertToEraString cEra, "transaction", "build"
     , "--change-address", Text.unpack $ paymentKeyInfoAddr $ wallets !! 0
     , "--tx-in", Text.unpack $ renderTxIn txin3
     , "--tx-out", Text.unpack (paymentKeyInfoAddr (wallets !! 1)) <> "+" <> show @Int 3_000_000
@@ -271,7 +272,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
 
 
   void $ H.execCli' execConfig
-    [ "conway", "transaction", "sign"
+    [  convertToEraString cEra, "transaction", "sign"
     , "--tx-body-file", voteTxBodyFp
     , "--signing-key-file", paymentSKey $ paymentKeyInfoPair $ wallets !! 0
     , "--signing-key-file", drepSKeyFp 1
@@ -281,7 +282,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
     ]
 
   void $ H.execCli' execConfig
-    [ "conway", "transaction", "submit"
+    [  convertToEraString cEra, "transaction", "submit"
     , "--tx-file", voteTxFp
     ]
 
@@ -305,6 +306,24 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
       H.failMessage callStack
         $ "foldBlocksCheckConstitutionWasRatified failed with: " <> displayError e
     Right (Right _events) -> success
+
+  -- Delegate voting stake to dreps and check the delegations were recorded
+  let voteDelegationDir = work </> gov </> "vote-delegation"
+  H.createDirectoryIfMissing_ voteDelegationDir
+
+  let delegatorStakeVkeyFp :: Int -> FilePath
+      delegatorStakeVkeyFp n = tempAbsPath' </> "stake-delegators" </> ("delegator" <> show n) </> "staking.vkey"
+
+      voteDelegationCertFp :: Int -> FilePath
+      voteDelegationCertFp n = voteDelegationDir </> "certificate-" <> show n
+
+  void $ H.execCli' execConfig
+    [ convertToEraString cEra , "stake-address", "vote-delegation-certificate"
+    , "--stake-verification-key-file", delegatorStakeVkeyFp 1
+    , "--drep-verification-key-file", drepVkeyFp 1
+    , "--out-file", voteDelegationCertFp 1
+    ]
+
 
 foldBlocksCheckProposalWasSubmitted
   :: TxId -- TxId of submitted tx
