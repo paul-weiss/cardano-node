@@ -44,7 +44,7 @@ import GHC.Utils.Misc                   as Util
                                  hiding (fst3, snd3, third3, uncurry3)
 #endif
 
-import Data.Aeson                       (FromJSON (..), ToJSON (..), Object, Value (..), (.:), (.:?), (.!=), withObject, object)
+import Data.Aeson                       (FromJSON (..), FromJSON1 (..), ToJSON (..), ToJSON1 (..), Object, Value (..), (.:), (.:?), (.!=), withObject, object)
 import Data.Aeson                       qualified as AE
 import Control.Arrow                    ((&&&), (***))
 import Control.Applicative              ((<|>))
@@ -77,10 +77,13 @@ deriving newtype instance   ToJSON a =>   (ToJSON (I a))
 
 -- * Data.IntervalMap.FingerTree.Interval
 --
-deriving instance FromJSON a => (FromJSON (Interval a))
+deriving instance Generic1                 Interval
+deriving instance FromJSON a =>  FromJSON (Interval a)
+deriving instance                FromJSON1 Interval
 deriving instance                 Functor  Interval
-deriving instance   ToJSON a =>   (ToJSON (Interval a))
-deriving instance   NFData a =>   (NFData (Interval a))
+deriving instance   ToJSON a =>    ToJSON (Interval a)
+deriving instance                  ToJSON1 Interval
+deriving instance   NFData a =>    NFData (Interval a)
 
 unionIntv, intersectIntv :: Ord a => [Interval a] -> Interval a
 unionIntv     xs = Interval (low lo) (high hi)

@@ -97,7 +97,7 @@ data ChainCommand
   |  RenderMultiSummary     RenderConfig TextOutputFile
 
   |             Compare     InputDir (Maybe TextInputFile) TextOutputFile
-                            [( JsonInputFile SomeSummary
+                            [( JsonInputFile (SomeSummary (KnownCDF & ToJSON1))
                              , JsonInputFile ClusterPerf
                              , JsonInputFile SomeBlockProp)]
 
@@ -812,7 +812,7 @@ runChainCommand s c@(Compare (InputDir dir) mTmpl outf@(TextOutputFile outfp) ru
   putByteString "locli runChainCommand: entering\n"
   progress "report" (Q $ printf "rendering report for %d runs" $ length runs)
   putByteString "locli runChainCommand: reading JSON data\n"
-  xs :: [(SomeSummary, ClusterPerf, SomeBlockProp)] <- forM runs $
+  xs :: [(SomeSummary KnownCDF, ClusterPerf, SomeBlockProp)] <- forM runs $
     \(sumf,cpf,bpf)->
       (,,)
       <$> readJsonData sumf (CommandError c)
