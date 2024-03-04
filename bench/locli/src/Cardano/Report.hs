@@ -197,15 +197,23 @@ liftTmplLaTeX :: KnownCDF a => Section (CDF a) Double -> LaTeXSection
 liftTmplLaTeX STable {..} =
   LaTeXSection {
       latexSectionTitle   = sTitle
-    , latexSectionColumns = case sFields of { ISel sel -> map fShortDesc (filter sel timelineFields) ; DSel sel -> map fShortDesc (filter sel cdfFields) }
+    -- *** XXX MAJOR BOGON XXX ***
+    -- The column labels need to be associated with groups of columns.
+    , latexSectionColumns = case sFields of
+                                  ISel sel -> map fShortDesc (filter sel timelineFields)
+                                  DSel sel -> map fShortDesc (filter sel      cdfFields)
     , latexSectionRows    = rows
-    , latexSectionData    = case sFields of {
-          ISel sel -> [concat [let range = cdfRange stats in map (formatDouble fWidth) [cdfMedian stats, cdfAverageVal stats, cdfStddev stats, low range, high range] | Field {..} <- filter sel timelineFields] | stats <- [sData]]
-       ;  DSel sel -> [concat [let range = cdfRange stats in map (formatDouble fWidth) [cdfMedian stats, cdfAverageVal stats, cdfStddev stats, low range, high range] | Field {..} <- filter sel cdfFields] | stats <- [sData]]
-      }
+    -- *** XXX MAJOR BOGON XXX ***
+    -- Rows need to be properly extracted from the CDF/MachPerf/etc.
+    , latexSectionData    = [concat [let range = cdfRange stats in map (formatDouble width) [cdfMedian stats, cdfAverageVal stats, cdfStddev stats, low range, high range] | width <- widths] | stats <- [sData]]
     }
     where
+          -- *** XXX MAJOR BOGON XXX ***
+          -- Row labels need to get prepended to the table's rows.
           rows = repeat ""
+          widths = case sFields of
+                           ISel sel -> [fWidth | Field {..} <- filter sel timelineFields]
+                           DSel sel -> [fWidth | Field {..} <- filter sel      cdfFields]
 
 liftTmplSection :: Section a p -> TmplSection
 liftTmplSection =
@@ -262,7 +270,6 @@ generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
           -> IO (Text, Text, Text, Text, Text, Text)
 generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
   ctx <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
-  _ <- pure _stable
   _ <- pure $ mkTmplEnv ctx (liftTmplRun summ) $ fmap ((\(SomeSummary ss) -> liftTmplRun ss). fst3) rest
   pure (titlingText ctx, summaryText, resourceText, anomalyText, forgingText, peersText)
   where
@@ -282,6 +289,9 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
                                        :: Field ISelect I (Summary f)
                                        <- timelineFields
                        , iFields sumFieldsReport fld]
+   -- *** XXX MAJOR BOGON XXX ***
+   -- Summary fields vary in type and can't all be properly rendered
+   -- as times. Many should be strings.
    summaryLines :: [Text]
    summaryLines =
      [ "\\begin{tabular}{c" <> List.foldr1 (<>) (map (const "|r") metas) <> "}"]
@@ -301,6 +311,10 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
    peersLines = (mkLines :: ((Field DSelect p BlockProp) -> Bool) -> [Text]) (dFields bpFieldsPeers)
    resourceLines :: [Text]
    resourceLines = (mkLines :: ((Field DSelect p MachPerf) -> Bool) -> [Text]) (dFields mtFieldsReport)
+   -- *** XXX MAJOR BOGON XXX ***
+   -- Fields should vary between percentages and timings, not
+   -- all be timings. Worse yet, each benchmark run should correspond to
+   -- means, variances, ranges etc. not just single numbers.
    mkLines :: CDFFields cstr p => (Field DSelect p cstr -> Bool) -> [Text]
    mkLines selector =
      [ "\\begin{tabular}{c" <> List.foldr1 (<>) (map (const "|r") fields) <> "}"]
@@ -320,9 +334,6 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
        , "\\def\\@loclititle{Value Workload for " <> unTag (rmTag ctx) <> "}"
        , "\\def\\@loclidate{" <> rmDate ctx <> "}"
        ]
-   _stable = STable cp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf"
-              ("clusterperf.report." <> formatSuffix AsLaTeX)
-               "Resource Usage"
    mkTmplEnv rc b rs = fromPairs
      [ "report"     .= rc
      , "base"       .= b
