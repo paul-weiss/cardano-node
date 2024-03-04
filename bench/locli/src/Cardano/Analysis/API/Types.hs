@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
@@ -60,14 +61,15 @@ data Summary f where
 
 type SummaryOne   = Summary I
 type MultiSummary = Summary (CDF I)
-data SomeSummary  = forall f. KnownCDF f => SomeSummary (Summary f)
+data SomeSummary cls =
+  forall f. cls f => SomeSummary (Summary f)
 
 deriving instance (forall a. FromJSON a => FromJSON (f a)) => FromJSON (Summary f)
 deriving instance (forall a.   ToJSON a =>   ToJSON (f a)) =>   ToJSON (Summary f)
 deriving instance (forall a.   NFData a =>   NFData (f a)) =>   NFData (Summary f)
 deriving instance (forall a.     Show a =>     Show (f a)) =>     Show (Summary f)
 
-instance FromJSON SomeSummary where
+instance (cls I, cls (CDF I)) => FromJSON (SomeSummary cls) where
   parseJSON x =
     (SomeSummary <$> parseJSON @SummaryOne   x)
     <|>

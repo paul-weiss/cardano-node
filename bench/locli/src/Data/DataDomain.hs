@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-partial-fields #-}
 module Data.DataDomain
   ( module Data.DataDomain
@@ -25,12 +26,16 @@ data DataDomain f a
     , ddRawCount      :: !(f Int)
     , ddFilteredCount :: !(f Int)
     }
-  deriving (Generic, Functor)
+  deriving (Generic, Generic1, Functor)
 -- Perhaps:  Plutus.V1.Ledger.Slot.SlotRange = Interval Slot
-deriving instance (forall b. FromJSON b => FromJSON (f b), FromJSON a) => FromJSON (DataDomain f a)
-deriving instance (forall b.   ToJSON b =>   ToJSON (f b),   ToJSON a) =>   ToJSON (DataDomain f a)
-deriving instance (forall b.   NFData b =>   NFData (f b),   NFData a) =>   NFData (DataDomain f a)
-deriving instance (forall b.     Show b =>     Show (f b),     Show a) =>     Show (DataDomain f a)
+deriving instance (forall b. FromJSON b => FromJSON (f b), FromJSON a)  =>  FromJSON (DataDomain f a)
+deriving instance (forall b.   ToJSON b =>   ToJSON (f b),   ToJSON a)  =>    ToJSON (DataDomain f a)
+deriving instance (forall b.   NFData b =>   NFData (f b),   NFData a)  =>    NFData (DataDomain f a)
+deriving instance (forall b.     Show b =>     Show (f b),     Show a)  =>      Show (DataDomain f a)
+deriving instance (forall a. FromJSON a => FromJSON (f a), FromJSON1 f) => FromJSON1 (DataDomain f)
+deriving instance FromJSON1 f                                           => FromJSON1 (DataDomain f)
+deriving instance (forall a.   ToJSON a =>  ToJSON (f a), ToJSON1 f)    =>   ToJSON1 (DataDomain f)
+deriving instance ToJSON1 f                                             =>   ToJSON1 (DataDomain f)
 
 -- | Key decision of DataDomain merging policy.
 data DataDomainComb

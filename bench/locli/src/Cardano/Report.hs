@@ -1,8 +1,12 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Cardano.Report
   ( module Cardano.Report
@@ -12,6 +16,7 @@ where
 import Cardano.Prelude
 
 import Data.Aeson.Encode.Pretty qualified as AEP
+import Data.Aeson           qualified as AE
 import Data.ByteString      qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.List            qualified as List
@@ -31,6 +36,10 @@ import Cardano.Render
 import Cardano.Util
 import Cardano.Analysis.API
 import Cardano.Analysis.Summary
+
+type (&) :: (k -> Constraint) -> (k -> Constraint) -> (k -> Constraint)
+class    (cls a, cls1 a) => (cls & cls1) a
+instance (cls a, cls1 a) => (cls & cls1) a
 
 
 newtype Author   = Author   { unAuthor   :: Text } deriving newtype (FromJSON, ToJSON)
@@ -264,15 +273,36 @@ instance ToJSON TmplSection where
                                               ("angles", angles)]))
     ]
 
-generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
-          -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
+generate' :: (SomeSummary (KnownCDF & AE.ToJSON1), ClusterPerf, SomeBlockProp)
+          -> [(SomeSummary (KnownCDF & AE.ToJSON1), ClusterPerf, SomeBlockProp)]
           -- summary, resource, anomaly, forging, peers
           -> IO (Text, Text, Text, Text, Text, Text)
 generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
   ctx <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
+  time <- getCurrentTime
   _ <- pure $ mkTmplEnv ctx (liftTmplRun summ) $ fmap ((\(SomeSummary ss) -> liftTmplRun ss). fst3) rest
+  let anchorForRendering =
+          Anchor {
+              aRuns = getName summ : map (\(SomeSummary ss, _, _) -> getName ss) rest
+             -- *** XXX MAJOR BOGON XXX ***
+             -- Filters, slots and blocks should actually come from somewhere.
+            , aFilters = ([], [])
+            , aSlots = Nothing
+            , aBlocks = Nothing
+            , aVersion = getLocliVersion
+            , aWhen = time
+          }
+          where
+            getName = tag . sumMeta
+  _ <- pure ( anomalyRendering anchorForRendering
+            , forgingRendering anchorForRendering
+            , peersRendering anchorForRendering
+            , resourceRendering anchorForRendering
+            )
   pure (titlingText ctx, summaryText, resourceText, anomalyText, forgingText, peersText)
   where
+   -- *** XXX DUMP THESE THINGS XXX ***
+   -- Move over to the Table API
    resourceText = unlines resourceLines
    anomalyText = unlines anomalyLines
    forgingText = unlines forgingLines
@@ -300,7 +330,20 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
            : zipWith (:) summaryFields [map mkTime (baseline : rest)]
            )
         ++ ["\\end{tabular}"]
-   mkTime :: (SomeSummary, t', t'') -> Text
+   -- *** XXX MAJOR BOGON XXX ***
+   -- This should come from somewhere, save rcFormat.
+   renderConfig =
+     RenderConfig {
+       rcFormat = AsLaTeX
+     , rcDateVerMetadata = False
+     , rcRunMetadata = False
+     }
+   anomalyRendering, forgingRendering, peersRendering, resourceRendering :: Anchor -> [(Text, [Text])]
+   anomalyRendering anchor = renderAnalysisCDFs anchor (dFields bpFieldsControl) OfInterCDF Nothing renderConfig bp
+   forgingRendering anchor = renderAnalysisCDFs anchor (dFields bpFieldsForger) OfInterCDF Nothing renderConfig bp
+   peersRendering anchor = renderAnalysisCDFs anchor (dFields bpFieldsPeers) OfInterCDF Nothing renderConfig bp
+   resourceRendering anchor = renderAnalysisCDFs anchor (dFields mtFieldsReport) OfInterCDF Nothing renderConfig cp
+   mkTime :: (SomeSummary (KnownCDF & AE.ToJSON1), t', t'') -> Text
    mkTime (SomeSummary x, _, _) = fmtTime $ sumAnalysisTime x
    restTmpls = fmap ((\(SomeSummary ss) -> liftTmplRun ss) . fst3) rest
    anomalyLines :: [Text]
@@ -348,7 +391,7 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
      ]
 
 generate :: InputDir -> Maybe TextInputFile
-         -> (SomeSummary, ClusterPerf, SomeBlockProp) -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
+         -> (SomeSummary KnownCDF, ClusterPerf, SomeBlockProp) -> [(SomeSummary KnownCDF, ClusterPerf, SomeBlockProp)]
          -> IO (ByteString, ByteString, Text)
 generate (InputDir ede) mReport (SomeSummary summ, cp, SomeBlockProp bp) rest = do
   ctx  <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
