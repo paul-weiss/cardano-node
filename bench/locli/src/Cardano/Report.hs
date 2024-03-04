@@ -98,7 +98,7 @@ filenameInfix = \case
   WValue                -> "value-only"
   _                     -> "unknown"
 
-data Section where
+data Section a p where
   STable ::
     { sData      :: !(a p)
     , sFields    :: !FSelect
@@ -107,38 +107,42 @@ data Section where
     , sDataRef   :: !Text
     , sOrgFile   :: !Text
     , sTitle     :: !Text
-    } -> Section
+    } -> Section a p
 
 formatSuffix :: RenderFormat -> Text
 formatSuffix AsOrg = "org"
 formatSuffix AsLaTeX = "latex"
 formatSuffix _ = "txt"
 
-summaryReportSection :: RenderFormat -> Summary f -> Section
+summaryReportSection :: RenderFormat -> Summary f -> Section Summary f
 summaryReportSection rf summ =
   STable summ (ISel @SummaryOne $ iFields sumFieldsReport) "Parameter" "Value"   "summary"
     ("summary." <> formatSuffix rf)
     "Overall run parameters"
 
-analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [Section]
+data AmbiguousSection = forall p a . CDFFields p a =>
+  AmbiguousSection (Section p a)
+
+-- analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [Section MachPerf (CDF I)]
+analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [AmbiguousSection]
 analysesReportSections rf mp bp =
-  [ STable mp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf"
+  [ AmbiguousSection $ STable mp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf"
     ("clusterperf.report." <> formatSuffix rf)
     "Resource Usage"
 
-  , STable bp (DSel @BlockProp $ dFields bpFieldsControl)  "metric"  "average" "control"
+  , AmbiguousSection $ STable bp (DSel @BlockProp $ dFields bpFieldsControl)  "metric"  "average" "control"
     ("blockprop.control." <> formatSuffix rf)
     "Anomaly control"
 
-  , STable bp (DSel @BlockProp $ dFields bpFieldsForger)   "metric"  "average"   "forge"
+  , AmbiguousSection $ STable bp (DSel @BlockProp $ dFields bpFieldsForger)   "metric"  "average"   "forge"
     ("blockprop.forger." <> formatSuffix rf)
     "Forging"
 
-  , STable bp (DSel @BlockProp $ dFields bpFieldsPeers)    "metric"  "average"   "peers"
+  , AmbiguousSection $ STable bp (DSel @BlockProp $ dFields bpFieldsPeers)    "metric"  "average"   "peers"
     ("blockprop.peers." <> formatSuffix rf)
     "Individual peer propagation"
 
-  , STable bp (DSel @BlockProp $ dFields bpFieldsEndToEnd) "metric"  "average" "end2end"
+  , AmbiguousSection $ STable bp (DSel @BlockProp $ dFields bpFieldsEndToEnd) "metric"  "average" "end2end"
     ("blockprop.endtoend." <> formatSuffix rf)
     "End-to-end propagation"
   ]
@@ -181,7 +185,29 @@ instance ToJSON TmplRun where
       , "fileInfix"  .= filenameInfix trWorkload
       ]
 
-liftTmplSection :: Section -> TmplSection
+data LaTeXSection =
+  LaTeXSection {
+      latexSectionTitle   :: Text
+    , latexSectionColumns :: [Text]
+    , latexSectionRows    :: [Text]
+    , latexSectionData    :: [[Text]]
+  } deriving (Eq, Read, Show)
+
+liftTmplLaTeX :: KnownCDF a => Section (CDF a) Double -> LaTeXSection
+liftTmplLaTeX STable {..} =
+  LaTeXSection {
+      latexSectionTitle   = sTitle
+    , latexSectionColumns = case sFields of { ISel sel -> map fShortDesc (filter sel timelineFields) ; DSel sel -> map fShortDesc (filter sel cdfFields) }
+    , latexSectionRows    = rows
+    , latexSectionData    = case sFields of {
+          ISel sel -> [concat [let range = cdfRange stats in map (formatDouble fWidth) [cdfMedian stats, cdfAverageVal stats, cdfStddev stats, low range, high range] | Field {..} <- filter sel timelineFields] | stats <- [sData]]
+       ;  DSel sel -> [concat [let range = cdfRange stats in map (formatDouble fWidth) [cdfMedian stats, cdfAverageVal stats, cdfStddev stats, low range, high range] | Field {..} <- filter sel cdfFields] | stats <- [sData]]
+      }
+    }
+    where
+          rows = repeat ""
+
+liftTmplSection :: Section a p -> TmplSection
 liftTmplSection =
   \case
     STable{..} ->
@@ -198,6 +224,10 @@ liftTmplSection =
      where fs = case sFields of
                   ISel sel -> filter sel timelineFields <&> fPrecision
                   DSel sel -> filter sel      cdfFields <&> fPrecision
+
+liftTmplSection' :: AmbiguousSection -> TmplSection
+liftTmplSection' (AmbiguousSection section) =
+  liftTmplSection section
 
 data TmplSection
   = TmplTable
@@ -232,8 +262,8 @@ generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
           -> IO (Text, Text, Text, Text, Text, Text)
 generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
   ctx <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
-  _ <- pure reportSections
   _ <- pure _stable
+  _ <- pure $ mkTmplEnv ctx (liftTmplRun summ) $ fmap ((\(SomeSummary ss) -> liftTmplRun ss). fst3) rest
   pure (titlingText ctx, summaryText, resourceText, anomalyText, forgingText, peersText)
   where
    resourceText = unlines resourceLines
@@ -281,6 +311,7 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
         ++ ["\\end{tabular}"]
      where
        fields = map fShortDesc $ filter selector cdfFields
+   summarySection = summaryReportSection AsLaTeX summ
    reportSections = analysesReportSections AsLaTeX cp bp
    -- Authors should have "\\and" interspersed between them in LaTeX.
    -- Write this out to titling.latex
@@ -292,6 +323,18 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
    _stable = STable cp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf"
               ("clusterperf.report." <> formatSuffix AsLaTeX)
                "Resource Usage"
+   mkTmplEnv rc b rs = fromPairs
+     [ "report"     .= rc
+     , "base"       .= b
+     , "runs"       .= rs
+     , "summary"    .= liftTmplSection summarySection
+     , "analyses"   .= fmap liftTmplSection' reportSections
+     , "dictionary" .= metricDictionary
+     , "charts"     .=
+       ((dClusterPerf metricDictionary & onlyKeys clusterPerfKeys)
+        <>
+        (dBlockProp   metricDictionary & onlyKeys blockPropKeys))
+     ]
 
 generate :: InputDir -> Maybe TextInputFile
          -> (SomeSummary, ClusterPerf, SomeBlockProp) -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
@@ -320,7 +363,7 @@ generate (InputDir ede) mReport (SomeSummary summ, cp, SomeBlockProp bp) rest = 
      , "base"       .= b
      , "runs"       .= rs
      , "summary"    .= liftTmplSection (summaryReportSection AsOrg summ)
-     , "analyses"   .= (liftTmplSection <$> analysesReportSections AsOrg cp bp)
+     , "analyses"   .= (liftTmplSection' <$> analysesReportSections AsOrg cp bp)
      , "dictionary" .= metricDictionary
      , "charts"     .=
        ((dClusterPerf metricDictionary & onlyKeys clusterPerfKeys)
