@@ -247,7 +247,7 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
    tags = map tag metas
    summaryText :: Text
    summaryText = unlines summaryLines
-   summaryFields :: [Text] -- [Field ISelect I (Summary f)]
+   summaryFields :: [Text]
    summaryFields = [sd | fld@Field { fShortDesc = sd }
                                        :: Field ISelect I (Summary f)
                                        <- timelineFields
@@ -263,14 +263,6 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
    mkTime :: (SomeSummary, t', t'') -> Text
    mkTime (SomeSummary x, _, _) = fmtTime $ sumAnalysisTime x
    restTmpls = fmap ((\(SomeSummary ss) -> liftTmplRun ss) . fst3) rest
-   -- resourceFields :: [Text]
-   -- resourceFields  = resourceFields' cdfFields
-   -- resourceFields' :: CDFFields cstr t => [Field DSelect I cstr] -> [Text]
-   -- resourceFields' = map fShortDesc . filter (dFields mtFieldsReport)
-                  {- [sd | fld@Field { fShortDesc = sd }
-                                      <- cdfFields
-                        , dFields mtFieldsReport fld]
-                  -}
    anomalyLines :: [Text]
    anomalyLines = (mkLines :: ((Field DSelect p BlockProp) -> Bool) -> [Text]) (dFields bpFieldsControl)
    forgingLines :: [Text]
@@ -278,14 +270,7 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
    peersLines :: [Text]
    peersLines = (mkLines :: ((Field DSelect p BlockProp) -> Bool) -> [Text]) (dFields bpFieldsPeers)
    resourceLines :: [Text]
-   resourceLines = (mkLines :: ((Field DSelect p MachPerf) -> Bool) -> [Text]) (dFields mtFieldsReport) {-
-     [ "\\begin{tabular}{c" <> List.foldr1 (<>) (map (const "|r") resourceFields) <> "}"]
-        ++ map ((<> "\\\\") . List.foldr1 (<>) . intersperse " & ")
-           ( ("" : tags)
-           : zipWith (:) resourceFields [map mkTime (baseline : rest)]
-           )
-        ++ ["\\end{tabular}"] -}
-   -- mkLines :: (Field _ _ _ -> Bool) -> [Text]
+   resourceLines = (mkLines :: ((Field DSelect p MachPerf) -> Bool) -> [Text]) (dFields mtFieldsReport)
    mkLines :: CDFFields cstr p => (Field DSelect p cstr -> Bool) -> [Text]
    mkLines selector =
      [ "\\begin{tabular}{c" <> List.foldr1 (<>) (map (const "|r") fields) <> "}"]
@@ -296,10 +281,6 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
         ++ ["\\end{tabular}"]
      where
        fields = map fShortDesc $ filter selector cdfFields
-       {- fields = [FieldName sd | fld@Field { fShortDesc = sd }
-                                  :: Field _ _ _
-                                  <- cdfFields
-                    , selector fld] -}
    reportSections = analysesReportSections AsLaTeX cp bp
    -- Authors should have "\\and" interspersed between them in LaTeX.
    -- Write this out to titling.latex
