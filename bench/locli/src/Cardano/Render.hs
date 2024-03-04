@@ -400,7 +400,6 @@ renderPropList a fieldSelr centileSelr rc xs =
     { tColHeaders     = concat [[fId f | f <- fields'] | _ <- xs]
     , tExtended       = True
     , tApexHeader     = Just "centile"
-    -- , tColumns        = fields' <&> fmap (T.intercalate ":") . renderFieldCentiles x cdfSamplesProps
     , tColumns        = concat [[fmap (T.intercalate ":") $ renderFieldCentiles x cdfSamplesProps f | f <- fields'] | x <- xs]
     , tRowHeaders     = percSpecs <&> (T.take 6 . T.pack . printf "%.4f") . unCentile
     , tSummaryHeaders = ["avg", "samples"]
@@ -418,7 +417,6 @@ renderPropList a fieldSelr centileSelr rc xs =
   }
  where
    cdfSamplesProps :: Divisible c => CDF p c -> [[c]]
-   -- cdfSamplesProps = fmap (pure . unliftCDFVal cdfIx . snd) . cdfSamples . restrictCDF
    cdfSamplesProps x = [[unliftCDFVal cdfIx sample] | (_, sample) <- cdfSamples $ restrictCDF x]
 
    fields' :: [Field DSelect p a]
