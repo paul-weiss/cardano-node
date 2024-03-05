@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-partial-fields #-}
@@ -11,6 +12,7 @@ where
 import Cardano.Prelude
 
 import Witherable qualified as Wither
+-- import Data.Aeson qualified as AE
 import Data.List.NonEmpty qualified as NE
 
 import Cardano.Util
@@ -32,10 +34,19 @@ deriving instance (forall b. FromJSON b => FromJSON (f b), FromJSON a)  =>  From
 deriving instance (forall b.   ToJSON b =>   ToJSON (f b),   ToJSON a)  =>    ToJSON (DataDomain f a)
 deriving instance (forall b.   NFData b =>   NFData (f b),   NFData a)  =>    NFData (DataDomain f a)
 deriving instance (forall b.     Show b =>     Show (f b),     Show a)  =>      Show (DataDomain f a)
-deriving instance (forall a. FromJSON a => FromJSON (f a), FromJSON1 f) => FromJSON1 (DataDomain f)
-deriving instance FromJSON1 f                                           => FromJSON1 (DataDomain f)
-deriving instance (forall a.   ToJSON a =>  ToJSON (f a), ToJSON1 f)    =>   ToJSON1 (DataDomain f)
-deriving instance ToJSON1 f                                             =>   ToJSON1 (DataDomain f)
+
+-- instance {-# OVERLAPPABLE #-} (forall a. FromJSON a => FromJSON (f a)) => FromJSON1 (DataDomain f) where
+--     liftParseJSON = AE.genericLiftParseJSON AE.defaultOptions
+-- deriving instance {-# OVERLAPPABLE #-} FromJSON1 f                      => FromJSON1 (DataDomain f)
+
+-- instance {-# OVERLAPPABLE #-} (forall a.   ToJSON a =>  ToJSON (f a))    =>   ToJSON1 (DataDomain f) where
+--     liftToJSON = AE.genericLiftToJSON AE.defaultOptions
+-- deriving instance {-# OVERLAPPABLE #-} ToJSON1 f                        =>   ToJSON1 (DataDomain f)
+
+-- instance {-# OVERLAPPABLE #-} (FromJSON1 f, FromJSON a) => FromJSON (f a) where
+--   parseJSON = AE.parseJSON1
+-- instance {-# OVERLAPPABLE #-} (ToJSON1 f, ToJSON a) => ToJSON (f a) where
+--   toJSON = AE.toJSON1
 
 -- | Key decision of DataDomain merging policy.
 data DataDomainComb
