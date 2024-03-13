@@ -315,7 +315,7 @@ hprop_ledger_events_propose_new_constitution = H.integrationWorkspace "propose-n
                       FullValidation
                       (EpochNo 10)
                       ()
-                      (foldBlocksCheckConstitutionWasRatified constitutionHash constitutionScriptHash)
+                      (\anes _ _ -> foldBlocksCheckConstitutionWasRatified constitutionHash constitutionScriptHash anes)
 
   void $ evalEither eConstitutionAdopted
 

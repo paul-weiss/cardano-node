@@ -321,7 +321,7 @@ startLedgerNewEpochStateLogging testnetRuntime tmpWorkspace = withFrozenCallStac
       Api.QuickValidation
       (EpochNo maxBound)
       ()
-      (handler logFile)
+      (\anes _ _ -> handler logFile anes)
   H.note_ $ "Started logging epoch states to to: " <> logFile
   where
     handler :: FilePath -> AnyNewEpochState -> StateT () IO LedgerStateCondition
