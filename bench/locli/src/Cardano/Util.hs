@@ -82,8 +82,6 @@ deriving anyclass instance   ToJSON1 I
 -- * Data.IntervalMap.FingerTree.Interval
 --
 deriving instance Generic1                 Interval
--- deriving instance AE.GFromJSON AE.One      Interval
--- deriving instance AE.GToJSON' Value AE.One Interval
 instance FromJSON a =>  FromJSON (Interval a) where
      parseJSON = AE.genericParseJSON AE.defaultOptions
 instance                FromJSON1 Interval where

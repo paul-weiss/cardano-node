@@ -61,15 +61,15 @@ data Summary f where
 
 type SummaryOne   = Summary I
 type MultiSummary = Summary (CDF I)
-data SomeSummary cls =
-  forall f. cls f => SomeSummary (Summary f)
+data SomeSummary  =
+  forall f. (KnownCDF f, forall a. FromJSON a => FromJSON (f a), forall a. ToJSON a => ToJSON (f a)) => SomeSummary (Summary f)
 
 deriving instance (forall a. FromJSON a => FromJSON (f a)) => FromJSON (Summary f)
 deriving instance (forall a.   ToJSON a =>   ToJSON (f a)) =>   ToJSON (Summary f)
 deriving instance (forall a.   NFData a =>   NFData (f a)) =>   NFData (Summary f)
 deriving instance (forall a.     Show a =>     Show (f a)) =>     Show (Summary f)
 
-instance (cls I, cls (CDF I)) => FromJSON (SomeSummary cls) where
+instance FromJSON SomeSummary where
   parseJSON x =
     (SomeSummary <$> parseJSON @SummaryOne   x)
     <|>
@@ -148,7 +148,7 @@ deriving instance
 
 type BlockPropOne   = BlockProp I
 type MultiBlockProp = BlockProp (CDF I)
-data SomeBlockProp  = forall f. KnownCDF f => SomeBlockProp (BlockProp f)
+data SomeBlockProp  = forall f. (KnownCDF f, forall a. ToJSON a => ToJSON (f a), forall a. FromJSON a => FromJSON (f a)) => SomeBlockProp (BlockProp f)
 
 -- | The top-level representation of the machine timeline analysis results.
 data MachPerf f
@@ -185,7 +185,6 @@ type    ClusterPerf  = MachPerf (CDF I)
 --   Same as above, since we collapse [CDF I] into CDF I -- just with more statistical confidence.
 newtype MultiClusterPerf
   = MultiClusterPerf { unMultiClusterPerf :: ClusterPerf }
-  deriving newtype (FromJSON)
 
 -- * BlockProp
 --

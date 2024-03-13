@@ -12,9 +12,9 @@ where
 import Cardano.Prelude
 
 import Witherable qualified as Wither
--- import Data.Aeson qualified as AE
 import Data.List.NonEmpty qualified as NE
 
+import Cardano.Slotting.Slot (SlotNo)
 import Cardano.Util
 import Data.CDF
 
@@ -30,23 +30,19 @@ data DataDomain f a
     }
   deriving (Generic, Generic1, Functor)
 -- Perhaps:  Plutus.V1.Ledger.Slot.SlotRange = Interval Slot
-deriving instance (forall b. FromJSON b => FromJSON (f b), FromJSON a)  =>  FromJSON (DataDomain f a)
-deriving instance (forall b.   ToJSON b =>   ToJSON (f b),   ToJSON a)  =>    ToJSON (DataDomain f a)
-deriving instance (forall b.   NFData b =>   NFData (f b),   NFData a)  =>    NFData (DataDomain f a)
-deriving instance (forall b.     Show b =>     Show (f b),     Show a)  =>      Show (DataDomain f a)
+deriving instance (forall b. FromJSON b => FromJSON (f b), FromJSON a) =>  FromJSON (DataDomain f a)
+deriving instance (forall b.   ToJSON b =>   ToJSON (f b),   ToJSON a) =>    ToJSON (DataDomain f a)
+deriving instance (forall b.   NFData b =>   NFData (f b),   NFData a) =>    NFData (DataDomain f a)
+deriving instance (forall b.     Show b =>     Show (f b),     Show a) =>      Show (DataDomain f a)
+deriving instance {-# OVERLAPPING #-} FromJSON (DataDomain I SlotNo)
+deriving instance {-# OVERLAPPING #-} FromJSON [DataDomain I SlotNo]
+deriving instance {-# OVERLAPPING #-} FromJSON (DataDomain (CDF I) SlotNo)
+deriving instance {-# OVERLAPPING #-} FromJSON [DataDomain (CDF I) SlotNo]
+deriving instance {-# OVERLAPPING #-} ToJSON (DataDomain I SlotNo)
+deriving instance {-# OVERLAPPING #-} ToJSON [DataDomain I SlotNo]
+deriving instance {-# OVERLAPPING #-} ToJSON (DataDomain (CDF I) SlotNo)
+deriving instance {-# OVERLAPPING #-} ToJSON [DataDomain (CDF I) SlotNo]
 
--- instance {-# OVERLAPPABLE #-} (forall a. FromJSON a => FromJSON (f a)) => FromJSON1 (DataDomain f) where
---     liftParseJSON = AE.genericLiftParseJSON AE.defaultOptions
--- deriving instance {-# OVERLAPPABLE #-} FromJSON1 f                      => FromJSON1 (DataDomain f)
-
--- instance {-# OVERLAPPABLE #-} (forall a.   ToJSON a =>  ToJSON (f a))    =>   ToJSON1 (DataDomain f) where
---     liftToJSON = AE.genericLiftToJSON AE.defaultOptions
--- deriving instance {-# OVERLAPPABLE #-} ToJSON1 f                        =>   ToJSON1 (DataDomain f)
-
--- instance {-# OVERLAPPABLE #-} (FromJSON1 f, FromJSON a) => FromJSON (f a) where
---   parseJSON = AE.parseJSON1
--- instance {-# OVERLAPPABLE #-} (ToJSON1 f, ToJSON a) => ToJSON (f a) where
---   toJSON = AE.toJSON1
 
 -- | Key decision of DataDomain merging policy.
 data DataDomainComb
