@@ -97,7 +97,7 @@ data ChainCommand
   |  RenderMultiSummary     RenderConfig TextOutputFile
 
   |             Compare     InputDir (Maybe TextInputFile) TextOutputFile
-                            [( JsonInputFile (SomeSummary (KnownCDF & ToJSON1))
+                            [( JsonInputFile SomeSummary
                              , JsonInputFile ClusterPerf
                              , JsonInputFile SomeBlockProp)]
 

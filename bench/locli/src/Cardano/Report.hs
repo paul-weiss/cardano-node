@@ -31,6 +31,7 @@ import System.Environment (lookupEnv)
 import Text.EDE hiding (Id)
 
 import Data.CDF
+import Data.DataDomain ()
 import Data.Tuple.Extra (fst3)
 import Cardano.Render
 import Cardano.Util
@@ -132,7 +133,6 @@ summaryReportSection rf summ =
 data AmbiguousSection = forall p a . CDFFields p a =>
   AmbiguousSection (Section p a)
 
--- analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [Section MachPerf (CDF I)]
 analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [AmbiguousSection]
 analysesReportSections rf mp bp =
   [ AmbiguousSection $ STable mp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf"
@@ -273,15 +273,22 @@ instance ToJSON TmplSection where
                                               ("angles", angles)]))
     ]
 
-generate' :: (SomeSummary (KnownCDF & AE.ToJSON1), ClusterPerf, SomeBlockProp)
-          -> [(SomeSummary (KnownCDF & AE.ToJSON1), ClusterPerf, SomeBlockProp)]
+generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
+          -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
           -- summary, resource, anomaly, forging, peers
           -> IO (Text, Text, Text, Text, Text, Text)
-generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
+generate' baseline@(SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
   ctx <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
   time <- getCurrentTime
-  _ <- pure $ mkTmplEnv ctx (liftTmplRun summ) $ fmap ((\(SomeSummary ss) -> liftTmplRun ss). fst3) rest
-  let anchorForRendering =
+  let summaryRendering :: [Text]
+      summaryRendering  = renderSummary renderConfig anchor (iFields sumFieldsReport) summ
+      anomalyRendering, forgingRendering, peersRendering, resourceRendering :: [(Text, [Text])]
+      anomalyRendering  = renderAnalysisCDFs anchor (dFields bpFieldsControl :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
+      forgingRendering  = renderAnalysisCDFs anchor (dFields bpFieldsForger :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
+      peersRendering    = renderAnalysisCDFs anchor (dFields bpFieldsPeers :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
+      resourceRendering = renderAnalysisCDFs anchor (dFields mtFieldsReport :: (Field DSelect cpt MachPerf) -> Bool) OfInterCDF Nothing renderConfig cp
+      anchor :: Anchor
+      anchor =
           Anchor {
               aRuns = getName summ : map (\(SomeSummary ss, _, _) -> getName ss) rest
              -- *** XXX MAJOR BOGON XXX ***
@@ -291,85 +298,25 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
             , aBlocks = Nothing
             , aVersion = getLocliVersion
             , aWhen = time
-          }
-          where
-            getName = tag . sumMeta
-  _ <- pure ( anomalyRendering anchorForRendering
-            , forgingRendering anchorForRendering
-            , peersRendering anchorForRendering
-            , resourceRendering anchorForRendering
+          } where getName = tag . sumMeta
+  pure    $ ( titlingText ctx
+            , T.intercalate " & " summaryRendering <> " \\\\\n"
+            , fixup resourceRendering
+            , fixup anomalyRendering
+            , fixup forgingRendering
+            , fixup peersRendering
             )
-  pure (titlingText ctx, summaryText, resourceText, anomalyText, forgingText, peersText)
   where
-   -- *** XXX DUMP THESE THINGS XXX ***
-   -- Move over to the Table API
-   resourceText = unlines resourceLines
-   anomalyText = unlines anomalyLines
-   forgingText = unlines forgingLines
-   peersText = unlines peersLines
-   fmtTime = T.pack . formatTime defaultTimeLocale rfc822DateFormat
    metas :: [Metadata]
    metas = sumMeta summ : fmap (\(SomeSummary ss, _, _) -> sumMeta ss) rest
-   tags :: [Text]
-   tags = map tag metas
-   summaryText :: Text
-   summaryText = unlines summaryLines
-   summaryFields :: [Text]
-   summaryFields = [sd | fld@Field { fShortDesc = sd }
-                                       :: Field ISelect I (Summary f)
-                                       <- timelineFields
-                       , iFields sumFieldsReport fld]
-   -- *** XXX MAJOR BOGON XXX ***
-   -- Summary fields vary in type and can't all be properly rendered
-   -- as times. Many should be strings.
-   summaryLines :: [Text]
-   summaryLines =
-     [ "\\begin{tabular}{c" <> List.foldr1 (<>) (map (const "|r") metas) <> "}"]
-        ++ map ((<> "\\\\") . List.foldr1 (<>) . intersperse " & ")
-           ( ("" : tags)
-           : zipWith (:) summaryFields [map mkTime (baseline : rest)]
-           )
-        ++ ["\\end{tabular}"]
-   -- *** XXX MAJOR BOGON XXX ***
-   -- This should come from somewhere, save rcFormat.
+   restTmpls = fmap ((\(SomeSummary ss) -> liftTmplRun ss) . fst3) rest
+   fixup = unlines . map ((<>" \\\\") . T.intercalate " & ") . transpose . map (uncurry (:))
    renderConfig =
      RenderConfig {
        rcFormat = AsLaTeX
      , rcDateVerMetadata = False
      , rcRunMetadata = False
      }
-   anomalyRendering, forgingRendering, peersRendering, resourceRendering :: Anchor -> [(Text, [Text])]
-   anomalyRendering anchor = renderAnalysisCDFs anchor (dFields bpFieldsControl) OfInterCDF Nothing renderConfig bp
-   forgingRendering anchor = renderAnalysisCDFs anchor (dFields bpFieldsForger) OfInterCDF Nothing renderConfig bp
-   peersRendering anchor = renderAnalysisCDFs anchor (dFields bpFieldsPeers) OfInterCDF Nothing renderConfig bp
-   resourceRendering anchor = renderAnalysisCDFs anchor (dFields mtFieldsReport) OfInterCDF Nothing renderConfig cp
-   mkTime :: (SomeSummary (KnownCDF & AE.ToJSON1), t', t'') -> Text
-   mkTime (SomeSummary x, _, _) = fmtTime $ sumAnalysisTime x
-   restTmpls = fmap ((\(SomeSummary ss) -> liftTmplRun ss) . fst3) rest
-   anomalyLines :: [Text]
-   anomalyLines = (mkLines :: ((Field DSelect p BlockProp) -> Bool) -> [Text]) (dFields bpFieldsControl)
-   forgingLines :: [Text]
-   forgingLines = (mkLines :: ((Field DSelect p BlockProp) -> Bool) -> [Text]) (dFields bpFieldsForger)
-   peersLines :: [Text]
-   peersLines = (mkLines :: ((Field DSelect p BlockProp) -> Bool) -> [Text]) (dFields bpFieldsPeers)
-   resourceLines :: [Text]
-   resourceLines = (mkLines :: ((Field DSelect p MachPerf) -> Bool) -> [Text]) (dFields mtFieldsReport)
-   -- *** XXX MAJOR BOGON XXX ***
-   -- Fields should vary between percentages and timings, not
-   -- all be timings. Worse yet, each benchmark run should correspond to
-   -- means, variances, ranges etc. not just single numbers.
-   mkLines :: CDFFields cstr p => (Field DSelect p cstr -> Bool) -> [Text]
-   mkLines selector =
-     [ "\\begin{tabular}{c" <> List.foldr1 (<>) (map (const "|r") fields) <> "}"]
-        ++ map ((<> "\\\\") . List.foldr1 (<>) . intersperse " & ")
-           ( ("" : tags)
-           : zipWith (:) fields [map mkTime (baseline : rest)]
-           )
-        ++ ["\\end{tabular}"]
-     where
-       fields = map fShortDesc $ filter selector cdfFields
-   summarySection = summaryReportSection AsLaTeX summ
-   reportSections = analysesReportSections AsLaTeX cp bp
    -- Authors should have "\\and" interspersed between them in LaTeX.
    -- Write this out to titling.latex
    titlingText ctx = unlines
@@ -377,21 +324,9 @@ generate' baseline@(SomeSummary (summ :: Summary f), cp :: cpt, SomeBlockProp (b
        , "\\def\\@loclititle{Value Workload for " <> unTag (rmTag ctx) <> "}"
        , "\\def\\@loclidate{" <> rmDate ctx <> "}"
        ]
-   mkTmplEnv rc b rs = fromPairs
-     [ "report"     .= rc
-     , "base"       .= b
-     , "runs"       .= rs
-     , "summary"    .= liftTmplSection summarySection
-     , "analyses"   .= fmap liftTmplSection' reportSections
-     , "dictionary" .= metricDictionary
-     , "charts"     .=
-       ((dClusterPerf metricDictionary & onlyKeys clusterPerfKeys)
-        <>
-        (dBlockProp   metricDictionary & onlyKeys blockPropKeys))
-     ]
 
 generate :: InputDir -> Maybe TextInputFile
-         -> (SomeSummary KnownCDF, ClusterPerf, SomeBlockProp) -> [(SomeSummary KnownCDF, ClusterPerf, SomeBlockProp)]
+         -> (SomeSummary, ClusterPerf, SomeBlockProp) -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
          -> IO (ByteString, ByteString, Text)
 generate (InputDir ede) mReport (SomeSummary summ, cp, SomeBlockProp bp) rest = do
   ctx  <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
