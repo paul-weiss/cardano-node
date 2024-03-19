@@ -1,10 +1,8 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
@@ -12,7 +10,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wwarn #-}
 
@@ -41,7 +38,7 @@ module Data.CDF
   , indexCDF
   , CDFIx (..)
   , KnownCDF (..)
-  , CDFList (..)
+  , CDFList
   , liftCDFVal
   , unliftCDFVal
   , unliftCDFValExtra
@@ -181,8 +178,8 @@ deriving instance (Eq     a, Eq     (p a), Eq     (p Double)) => Eq     (CDF p a
 deriving instance (Show   a, Show   (p a), Show   (p Double)) => Show   (CDF p a)
 deriving instance (NFData a, NFData (p a), NFData (p Double)) => NFData (CDF p a)
 
-instance (FromJSON (p a), FromJSON (p Double), FromJSON a) => FromJSON  (CDF p a)
-instance (  ToJSON (p a),   ToJSON (p Double),   ToJSON a) => ToJSON    (CDF p a)
+instance (FromJSON (p a), FromJSON (p Double), FromJSON a) => FromJSON (CDF p a)
+instance (  ToJSON (p a),   ToJSON (p Double),   ToJSON a) => ToJSON   (CDF p a)
 
 cdfAverageVal :: (KnownCDF p) => CDF p a -> Double
 cdfAverageVal =
@@ -268,41 +265,15 @@ data CDFIx p where
   CDFI :: CDFIx I
   CDF2 :: CDFIx (CDF I)
 
-class (Generic1 f, Generic1 (CDFList f)) => KnownCDF (f :: Type -> Type) where
-  cdfIx :: CDFIx f
-  data family CDFList f :: Type -> Type
+class KnownCDF a where
+  cdfIx :: CDFIx a
 
-instance KnownCDF      I  where
-  cdfIx = CDFI
-  newtype CDFList I t = CDFSingleton { unCDFSingleton :: t }
-    deriving (Generic)
+instance KnownCDF      I  where cdfIx = CDFI
+instance KnownCDF (CDF I) where cdfIx = CDF2
 
-instance KnownCDF (CDF I) where
-  cdfIx = CDF2
-  newtype CDFList (CDF I) t = CDFList { unCDFList :: [t] }
-    deriving (Generic)
-
-
--- data family CDFList (f :: Type -> Type) (t :: Type) :: Type
--- newtype instance CDFList I       t = CDFSingleton { unCDFSingleton :: t }
---     deriving (Generic)
--- newtype instance CDFList (CDF I) t = CDFList { unCDFList :: [t] }
---     deriving (Generic)
-
--- deriving instance {-# OVERLAPPING #-} Generic1 I
-deriving instance {-# OVERLAPPING #-} Generic1 (CDFList I)
-deriving instance {-# OVERLAPPING #-} Generic1 (CDF I)
-deriving instance {-# OVERLAPPING #-} Generic1 (CDFList (CDF I))
-deriving instance {-# OVERLAPPING #-} (KnownCDF f, Generic1 f) => Generic1 (CDFList f)
-deriving instance {-# OVERLAPPING #-} (KnownCDF f, Generic1 f, Generic t) => Generic (CDFList f t)
--- deriving instance {-# OVERLAPPING #-} Generic t => Generic (CDFList I t)
--- deriving instance {-# OVERLAPPING #-} Generic t => Generic (CDFList (CDF I) t)
-deriving instance {-# OVERLAPPING #-} (KnownCDF f, Generic1 f, Generic t, ToJSON t) => ToJSON (CDFList f t)
-deriving instance {-# OVERLAPPING #-} (Generic t, ToJSON t) => ToJSON (CDFList I t)
-deriving instance {-# OVERLAPPING #-} (Generic t, ToJSON t) => ToJSON (CDFList (CDF I) t)
-deriving instance {-# OVERLAPPING #-} (KnownCDF f, Generic1 f, Generic t, FromJSON t) => FromJSON (CDFList f t)
-deriving instance {-# OVERLAPPING #-} (Generic t, FromJSON t) => FromJSON (CDFList I t)
-deriving instance {-# OVERLAPPING #-} (Generic t, FromJSON t) => FromJSON (CDFList (CDF I) t)
+type family CDFList (f :: Type -> Type) (t :: Type) :: Type where
+  CDFList I       t = t
+  CDFList (CDF I) t = [t]
 
 liftCDFVal :: forall a p. Real a => a -> CDFIx p -> p a
 liftCDFVal x = \case

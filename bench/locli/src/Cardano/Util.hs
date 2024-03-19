@@ -1,7 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
@@ -45,7 +44,7 @@ import GHC.Utils.Misc                   as Util
                                  hiding (fst3, snd3, third3, uncurry3)
 #endif
 
-import Data.Aeson                       (FromJSON (..), FromJSON1 (..), ToJSON (..), ToJSON1 (..), Object, Value (..), (.:), (.:?), (.!=), withObject, object)
+import Data.Aeson                       (FromJSON (..), ToJSON (..), Object, Value (..), (.:), (.:?), (.!=), withObject, object)
 import Data.Aeson                       qualified as AE
 import Control.Arrow                    ((&&&), (***))
 import Control.Applicative              ((<|>))
@@ -73,25 +72,15 @@ import Ouroboros.Consensus.Util.Time
 import Cardano.Ledger.BaseTypes         (StrictMaybe (..), fromSMaybe)
 
 
-deriving instance Generic1 I
 deriving newtype instance FromJSON a => (FromJSON (I a))
-deriving anyclass instance FromJSON1 I
 deriving newtype instance   ToJSON a =>   (ToJSON (I a))
-deriving anyclass instance   ToJSON1 I
 
 -- * Data.IntervalMap.FingerTree.Interval
 --
-deriving instance Generic1                 Interval
-instance FromJSON a =>  FromJSON (Interval a) where
-     parseJSON = AE.genericParseJSON AE.defaultOptions
-instance                FromJSON1 Interval where
-    liftParseJSON = AE.genericLiftParseJSON AE.defaultOptions
+deriving instance FromJSON a => (FromJSON (Interval a))
 deriving instance                 Functor  Interval
-instance   ToJSON a =>    ToJSON (Interval a) where
-    toJSON = AE.genericToJSON AE.defaultOptions
-instance                  ToJSON1 Interval where
-    liftToJSON = AE.genericLiftToJSON AE.defaultOptions
-deriving instance   NFData a =>    NFData (Interval a)
+deriving instance   ToJSON a =>   (ToJSON (Interval a))
+deriving instance   NFData a =>   (NFData (Interval a))
 
 unionIntv, intersectIntv :: Ord a => [Interval a] -> Interval a
 unionIntv     xs = Interval (low lo) (high hi)

@@ -1,12 +1,9 @@
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Cardano.Report
   ( module Cardano.Report
@@ -16,32 +13,29 @@ where
 import Cardano.Prelude
 
 import Data.Aeson.Encode.Pretty qualified as AEP
-import Data.Aeson           qualified as AE
 import Data.ByteString      qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import Data.List            qualified as List
 import Data.Map.Strict      qualified as Map
 import Data.Text            qualified as T
 import Data.Text.Lazy       qualified as LT
 import Data.Time.Clock
-import Data.Time.Format
 import System.Posix.User
 import System.Environment (lookupEnv)
 
 import Text.EDE hiding (Id)
 
 import Data.CDF
-import Data.DataDomain ()
 import Data.Tuple.Extra (fst3)
 import Cardano.Render
 import Cardano.Util
 import Cardano.Analysis.API
 import Cardano.Analysis.Summary
 
+{-
 type (&) :: (k -> Constraint) -> (k -> Constraint) -> (k -> Constraint)
 class    (cls a, cls1 a) => (cls & cls1) a
 instance (cls a, cls1 a) => (cls & cls1) a
-
+-}
 
 newtype Author   = Author   { unAuthor   :: Text } deriving newtype (FromJSON, ToJSON)
 newtype ShortId  = ShortId  { unShortId  :: Text } deriving newtype (FromJSON, ToJSON)
@@ -108,7 +102,7 @@ filenameInfix = \case
   WValue                -> "value-only"
   _                     -> "unknown"
 
-data Section a p where
+data Section where
   STable ::
     { sData      :: !(a p)
     , sFields    :: !FSelect
@@ -117,44 +111,47 @@ data Section a p where
     , sDataRef   :: !Text
     , sOrgFile   :: !Text
     , sTitle     :: !Text
-    } -> Section a p
+    } -> Section
 
 formatSuffix :: RenderFormat -> Text
 formatSuffix AsOrg = "org"
 formatSuffix AsLaTeX = "latex"
 formatSuffix _ = "txt"
 
-summaryReportSection :: RenderFormat -> Summary f -> Section Summary f
+summaryReportSection :: RenderFormat -> Summary f -> Section
 summaryReportSection rf summ =
   STable summ (ISel @SummaryOne $ iFields sumFieldsReport) "Parameter" "Value"   "summary"
     ("summary." <> formatSuffix rf)
     "Overall run parameters"
 
+{-}
 data AmbiguousSection = forall p a . CDFFields p a =>
   AmbiguousSection (Section p a)
-
+-}
+{-
 analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [AmbiguousSection]
 analysesReportSections rf mp bp =
-  [ AmbiguousSection $ STable mp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf"
-    ("clusterperf.report." <> formatSuffix rf)
+-}
+
+analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [Section]
+analysesReportSections rf mp bp =
+  [ STable mp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf" ("clusterperf.report." <> ext)
     "Resource Usage"
 
-  , AmbiguousSection $ STable bp (DSel @BlockProp $ dFields bpFieldsControl)  "metric"  "average" "control"
-    ("blockprop.control." <> formatSuffix rf)
+  , STable bp (DSel @BlockProp $ dFields bpFieldsControl)  "metric"  "average" "control" ("blockprop.control." <> ext)
     "Anomaly control"
 
-  , AmbiguousSection $ STable bp (DSel @BlockProp $ dFields bpFieldsForger)   "metric"  "average"   "forge"
-    ("blockprop.forger." <> formatSuffix rf)
+  , STable bp (DSel @BlockProp $ dFields bpFieldsForger)   "metric"  "average"   "forge" ("blockprop.forger." <> ext)
     "Forging"
 
-  , AmbiguousSection $ STable bp (DSel @BlockProp $ dFields bpFieldsPeers)    "metric"  "average"   "peers"
-    ("blockprop.peers." <> formatSuffix rf)
+  , STable bp (DSel @BlockProp $ dFields bpFieldsPeers)    "metric"  "average"   "peers" ("blockprop.peers." <> ext)
     "Individual peer propagation"
 
-  , AmbiguousSection $ STable bp (DSel @BlockProp $ dFields bpFieldsEndToEnd) "metric"  "average" "end2end"
-    ("blockprop.endtoend." <> formatSuffix rf)
+  , STable bp (DSel @BlockProp $ dFields bpFieldsEndToEnd) "metric"  "average" "end2end" ("blockprop.endtoend." <> ext)
     "End-to-end propagation"
   ]
+  where
+    ext = formatSuffix rf
 
 --
 -- Representation of a run, structured for template generator's needs.
@@ -202,7 +199,8 @@ data LaTeXSection =
     , latexSectionData    :: [[Text]]
   } deriving (Eq, Read, Show)
 
-liftTmplLaTeX :: KnownCDF a => Section (CDF a) Double -> LaTeXSection
+-- liftTmplLaTeX :: KnownCDF a => Section (CDF a) Double -> LaTeXSection
+liftTmplLaTeX :: Section -> LaTeXSection
 liftTmplLaTeX STable {..} =
   LaTeXSection {
       latexSectionTitle   = sTitle
@@ -214,17 +212,18 @@ liftTmplLaTeX STable {..} =
     , latexSectionRows    = rows
     -- *** XXX MAJOR BOGON XXX ***
     -- Rows need to be properly extracted from the CDF/MachPerf/etc.
-    , latexSectionData    = [concat [let range = cdfRange stats in map (formatDouble width) [cdfMedian stats, cdfAverageVal stats, cdfStddev stats, low range, high range] | width <- widths] | stats <- [sData]]
+    -- , latexSectionData    = [concat [let range = cdfRange stats in map (formatDouble width) [cdfMedian stats, cdfAverageVal stats, cdfStddev stats, low range, high range] | width <- widths] | stats <- [sData]]
+    , latexSectionData = []
     }
     where
           -- *** XXX MAJOR BOGON XXX ***
           -- Row labels need to get prepended to the table's rows.
           rows = repeat ""
-          widths = case sFields of
+          _widths = case sFields of
                            ISel sel -> [fWidth | Field {..} <- filter sel timelineFields]
                            DSel sel -> [fWidth | Field {..} <- filter sel      cdfFields]
 
-liftTmplSection :: Section a p -> TmplSection
+liftTmplSection :: Section -> TmplSection
 liftTmplSection =
   \case
     STable{..} ->
@@ -241,10 +240,11 @@ liftTmplSection =
      where fs = case sFields of
                   ISel sel -> filter sel timelineFields <&> fPrecision
                   DSel sel -> filter sel      cdfFields <&> fPrecision
-
+{-
 liftTmplSection' :: AmbiguousSection -> TmplSection
 liftTmplSection' (AmbiguousSection section) =
   liftTmplSection section
+-}
 
 data TmplSection
   = TmplTable
@@ -277,16 +277,21 @@ generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
           -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
           -- summary, resource, anomaly, forging, peers
           -> IO (Text, Text, Text, Text, Text, Text)
-generate' baseline@(SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
+generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (_bp :: BlockProp bpt)) rest = do
   ctx <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
   time <- getCurrentTime
+
   let summaryRendering :: [Text]
       summaryRendering  = renderSummary renderConfig anchor (iFields sumFieldsReport) summ
       anomalyRendering, forgingRendering, peersRendering, resourceRendering :: [(Text, [Text])]
-      anomalyRendering  = renderAnalysisCDFs anchor (dFields bpFieldsControl :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
-      forgingRendering  = renderAnalysisCDFs anchor (dFields bpFieldsForger :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
-      peersRendering    = renderAnalysisCDFs anchor (dFields bpFieldsPeers :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
+      -- anomalyRendering  = renderAnalysisCDFs anchor (dFields bpFieldsControl :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
+      -- forgingRendering  = renderAnalysisCDFs anchor (dFields bpFieldsForger :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
+      -- peersRendering    = renderAnalysisCDFs anchor (dFields bpFieldsPeers :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
+      anomalyRendering = []
+      forgingRendering = []
+      peersRendering = []
       resourceRendering = renderAnalysisCDFs anchor (dFields mtFieldsReport :: (Field DSelect cpt MachPerf) -> Bool) OfInterCDF Nothing renderConfig cp
+
       anchor :: Anchor
       anchor =
           Anchor {
@@ -352,7 +357,7 @@ generate (InputDir ede) mReport (SomeSummary summ, cp, SomeBlockProp bp) rest = 
      , "base"       .= b
      , "runs"       .= rs
      , "summary"    .= liftTmplSection (summaryReportSection AsOrg summ)
-     , "analyses"   .= (liftTmplSection' <$> analysesReportSections AsOrg cp bp)
+     , "analyses"   .= (liftTmplSection <$> analysesReportSections AsOrg cp bp)
      , "dictionary" .= metricDictionary
      , "charts"     .=
        ((dClusterPerf metricDictionary & onlyKeys clusterPerfKeys)

@@ -1,8 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-partial-fields #-}
 module Data.DataDomain
   ( module Data.DataDomain
@@ -14,7 +12,6 @@ import Cardano.Prelude
 import Witherable qualified as Wither
 import Data.List.NonEmpty qualified as NE
 
-import Cardano.Slotting.Slot (SlotNo)
 import Cardano.Util
 import Data.CDF
 
@@ -28,21 +25,12 @@ data DataDomain f a
     , ddRawCount      :: !(f Int)
     , ddFilteredCount :: !(f Int)
     }
-  deriving (Generic, Generic1, Functor)
+  deriving (Generic, Functor)
 -- Perhaps:  Plutus.V1.Ledger.Slot.SlotRange = Interval Slot
-deriving instance (forall b. FromJSON b => FromJSON (f b), FromJSON a) =>  FromJSON (DataDomain f a)
-deriving instance (forall b.   ToJSON b =>   ToJSON (f b),   ToJSON a) =>    ToJSON (DataDomain f a)
-deriving instance (forall b.   NFData b =>   NFData (f b),   NFData a) =>    NFData (DataDomain f a)
-deriving instance (forall b.     Show b =>     Show (f b),     Show a) =>      Show (DataDomain f a)
-deriving instance {-# OVERLAPPING #-} FromJSON (DataDomain I SlotNo)
-deriving instance {-# OVERLAPPING #-} FromJSON [DataDomain I SlotNo]
-deriving instance {-# OVERLAPPING #-} FromJSON (DataDomain (CDF I) SlotNo)
-deriving instance {-# OVERLAPPING #-} FromJSON [DataDomain (CDF I) SlotNo]
-deriving instance {-# OVERLAPPING #-} ToJSON (DataDomain I SlotNo)
-deriving instance {-# OVERLAPPING #-} ToJSON [DataDomain I SlotNo]
-deriving instance {-# OVERLAPPING #-} ToJSON (DataDomain (CDF I) SlotNo)
-deriving instance {-# OVERLAPPING #-} ToJSON [DataDomain (CDF I) SlotNo]
-
+deriving instance (forall b. FromJSON b => FromJSON (f b), FromJSON a) => FromJSON (DataDomain f a)
+deriving instance (forall b.   ToJSON b =>   ToJSON (f b),   ToJSON a) =>   ToJSON (DataDomain f a)
+deriving instance (forall b.   NFData b =>   NFData (f b),   NFData a) =>   NFData (DataDomain f a)
+deriving instance (forall b.     Show b =>     Show (f b),     Show a) =>     Show (DataDomain f a)
 
 -- | Key decision of DataDomain merging policy.
 data DataDomainComb

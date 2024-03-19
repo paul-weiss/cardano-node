@@ -199,8 +199,7 @@ computeSummary sumAnalysisTime
                             (runtimes <&> fromIntegral @Int . truncate)
 
    (,,) sumDomainTime sumStartSpread sumStopSpread =
-     slotDomains sumGenesis (losFirsts, losLasts)
-          $ unCDFList mpDomainSlots
+     slotDomains sumGenesis (losFirsts, losLasts) mpDomainSlots
 
    sumChainRejectionStats :: [(ChainFilter, Int)]
    sumChainRejectionStats =
