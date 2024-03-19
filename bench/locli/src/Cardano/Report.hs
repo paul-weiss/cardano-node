@@ -118,15 +118,6 @@ summaryReportSection rf summ =
     ("summary." <> formatSuffix rf)
     "Overall run parameters"
 
-{-}
-data AmbiguousSection = forall p a . CDFFields p a =>
-  AmbiguousSection (Section p a)
--}
-{-
-analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [AmbiguousSection]
-analysesReportSections rf mp bp =
--}
-
 analysesReportSections :: RenderFormat -> MachPerf (CDF I) -> BlockProp f -> [Section]
 analysesReportSections rf mp bp =
   [ STable mp (DSel @MachPerf  $ dFields mtFieldsReport)   "metric"  "average"    "perf" ("clusterperf.report." <> ext)
@@ -234,11 +225,6 @@ liftTmplSection =
      where fs = case sFields of
                   ISel sel -> filter sel timelineFields <&> fPrecision
                   DSel sel -> filter sel      cdfFields <&> fPrecision
-{-
-liftTmplSection' :: AmbiguousSection -> TmplSection
-liftTmplSection' (AmbiguousSection section) =
-  liftTmplSection section
--}
 
 data TmplSection
   = TmplTable
