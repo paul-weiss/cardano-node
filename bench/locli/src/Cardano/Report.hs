@@ -31,12 +31,6 @@ import Cardano.Util
 import Cardano.Analysis.API
 import Cardano.Analysis.Summary
 
-{-
-type (&) :: (k -> Constraint) -> (k -> Constraint) -> (k -> Constraint)
-class    (cls a, cls1 a) => (cls & cls1) a
-instance (cls a, cls1 a) => (cls & cls1) a
--}
-
 newtype Author   = Author   { unAuthor   :: Text } deriving newtype (FromJSON, ToJSON)
 newtype ShortId  = ShortId  { unShortId  :: Text } deriving newtype (FromJSON, ToJSON)
 newtype Tag      = Tag      { unTag      :: Text } deriving newtype (FromJSON, ToJSON)
