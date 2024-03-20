@@ -176,38 +176,6 @@ instance ToJSON TmplRun where
       , "fileInfix"  .= filenameInfix trWorkload
       ]
 
-data LaTeXSection =
-  LaTeXSection {
-      latexSectionTitle   :: Text
-    , latexSectionColumns :: [Text]
-    , latexSectionRows    :: [Text]
-    , latexSectionData    :: [[Text]]
-  } deriving (Eq, Read, Show)
-
--- liftTmplLaTeX :: KnownCDF a => Section (CDF a) Double -> LaTeXSection
-liftTmplLaTeX :: Section -> LaTeXSection
-liftTmplLaTeX STable {..} =
-  LaTeXSection {
-      latexSectionTitle   = sTitle
-    -- *** XXX MAJOR BOGON XXX ***
-    -- The column labels need to be associated with groups of columns.
-    , latexSectionColumns = case sFields of
-                                  ISel sel -> map fShortDesc (filter sel timelineFields)
-                                  DSel sel -> map fShortDesc (filter sel      cdfFields)
-    , latexSectionRows    = rows
-    -- *** XXX MAJOR BOGON XXX ***
-    -- Rows need to be properly extracted from the CDF/MachPerf/etc.
-    -- , latexSectionData    = [concat [let range = cdfRange stats in map (formatDouble width) [cdfMedian stats, cdfAverageVal stats, cdfStddev stats, low range, high range] | width <- widths] | stats <- [sData]]
-    , latexSectionData = []
-    }
-    where
-          -- *** XXX MAJOR BOGON XXX ***
-          -- Row labels need to get prepended to the table's rows.
-          rows = repeat ""
-          _widths = case sFields of
-                           ISel sel -> [fWidth | Field {..} <- filter sel timelineFields]
-                           DSel sel -> [fWidth | Field {..} <- filter sel      cdfFields]
-
 liftTmplSection :: Section -> TmplSection
 liftTmplSection =
   \case
