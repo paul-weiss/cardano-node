@@ -390,46 +390,6 @@ renderProps a fieldSelr centileSelr rc x =
                      id
                      centileSelr
 
-renderPropList :: forall a p. (CDFFields a p, KnownCDF p) => Anchor -> (Field DSelect p a -> Bool) -> Maybe [Centile] -> RenderConfig -> [a p] -> Table
-renderPropList a fieldSelr centileSelr rc xs =
-  Props
-  { oProps = renderAnchorOrgProperties rc a
-  , oConstants = []
-  , oBody = (:[]) $
-    Table
-    { tColHeaders     = concat [[fId f | f <- fields'] | _ <- xs]
-    , tExtended       = True
-    , tApexHeader     = Just "centile"
-    , tColumns        = concat [[fmap (T.intercalate ":") $ renderFieldCentiles x cdfSamplesProps f | f <- fields'] | x <- xs]
-    , tRowHeaders     = percSpecs <&> (T.take 6 . T.pack . printf "%.4f") . unCentile
-    , tSummaryHeaders = ["avg", "samples"]
-    , tSummaryValues  = concat [[ fields' <&>
-                                  \f@Field{..} ->
-                                    mapField x (formatDouble fWidth . cdfAverageVal) f
-                                , fields' <&>
-                                  \f@Field{..} ->
-                                    mapField x (formatInt    fWidth . cdfSize) f
-                                ] & transpose
-                                | x <- xs]
-    , tFormula = []
-    , tConstants = []
-    }
-  }
- where
-   cdfSamplesProps :: Divisible c => CDF p c -> [[c]]
-   cdfSamplesProps x = [[unliftCDFVal cdfIx sample] | (_, sample) <- cdfSamples $ restrictCDF x]
-
-   fields' :: [Field DSelect p a]
-   fields' = filterFields fieldSelr
-
-   restrictCDF :: forall c. CDF p c -> CDF p c
-   restrictCDF = maybe id subsetCDF centileSelr
-
-   percSpecs :: [Centile]
-   percSpecs = concat [maybe (mapSomeFieldCDF centilesCDF x (fSelect . head $ cdfFields @a @p))
-                         id
-                         centileSelr | x <- xs]
-
 renderAnalysisCDFs :: forall a p. (CDFFields a p, KnownCDF p, ToJSON (a p)) => Anchor -> (Field DSelect p a -> Bool) -> CDF2Aspect -> Maybe [Centile] -> RenderConfig -> a p -> [(Text, [Text])]
 
 renderAnalysisCDFs _anchor _fieldSelr _c2a _centileSelr RenderConfig{rcFormat=AsJSON} x = (:[]) . ("",) . (:[]) . LT.toStrict $
