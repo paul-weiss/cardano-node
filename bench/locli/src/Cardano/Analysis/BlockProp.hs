@@ -99,8 +99,8 @@ summariseMultiBlockProp centiles bs@(headline:_) = do
         (d,) <$> cdf2OfCDFs comb (snd <$> xs)
   pure $ BlockProp
     { bpVersion             = bpVersion headline
-    , bpDomainSlots         = slotDomains
-    , bpDomainBlocks        = blockDomains
+    , bpDomainSlots         = CDFListMultiple slotDomains
+    , bpDomainBlocks        = CDFListMultiple blockDomains
     , bpDomainCDFSlots      = slotDomains  &
                                 traverseDataDomain (cdf stdCentiles . fmap unI)
     , bpDomainCDFBlocks     = blockDomains &
@@ -113,9 +113,11 @@ summariseMultiBlockProp centiles bs@(headline:_) = do
    comb = stdCombine1 centiles
 
    slotDomains :: [DataDomain I SlotNo]
-   slotDomains = bs <&> bpDomainSlots
+   slotDomains = concatMap flattenSlot $ bs <&> bpDomainSlots
+   flattenSlot (CDFListSingleton x) = [x]
+   flattenSlot (CDFListMultiple  xs) = xs
    blockDomains :: [DataDomain I BlockNo]
-   blockDomains = bs <&> bpDomainBlocks
+   blockDomains = concatMap flattenSlot $ bs <&> bpDomainBlocks
 
 bfePrevBlock :: ForgerEvents a -> Maybe Hash
 bfePrevBlock x = case bfeBlockNo x of
@@ -545,8 +547,8 @@ blockProp run@Run{genesis} Chain{..} = do
       xs -> pure xs
 
   pure $ BlockProp
-    { bpDomainSlots        = cDomSlots
-    , bpDomainBlocks       = cDomBlocks
+    { bpDomainSlots        = CDFListSingleton cDomSlots
+    , bpDomainBlocks       = CDFListSingleton cDomBlocks
     , bpDomainCDFSlots     = cDomSlots   -- At unit-arity..
     , bpDomainCDFBlocks    = cDomBlocks  -- .. it's just a replica.
     , cdfForgerStart       = forgerCDF c   (SJust . bfStarted   . beForge)
