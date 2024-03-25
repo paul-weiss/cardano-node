@@ -225,20 +225,17 @@ generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
           -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
           -- summary, resource, anomaly, forging, peers
           -> IO (Text, Text, Text, Text, Text, Text)
-generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (_bp :: BlockProp bpt)) rest = do
+generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
   ctx <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
   time <- getCurrentTime
 
   let summaryRendering :: [Text]
       summaryRendering  = renderSummary renderConfig anchor (iFields sumFieldsReport) summ
       anomalyRendering, forgingRendering, peersRendering, resourceRendering :: [(Text, [Text])]
-      -- anomalyRendering  = renderAnalysisCDFs anchor (dFields bpFieldsControl :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
-      -- forgingRendering  = renderAnalysisCDFs anchor (dFields bpFieldsForger :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
-      -- peersRendering    = renderAnalysisCDFs anchor (dFields bpFieldsPeers :: (Field DSelect bpt BlockProp) -> Bool) OfInterCDF Nothing renderConfig bp
-      anomalyRendering = []
-      forgingRendering = []
-      peersRendering = []
-      resourceRendering = renderAnalysisCDFs anchor (dFields mtFieldsReport :: (Field DSelect cpt MachPerf) -> Bool) OfInterCDF Nothing renderConfig cp
+      anomalyRendering  = renderAnalysisCDFs anchor (dFields bpFieldsControl) OfInterCDF Nothing renderConfig bp
+      forgingRendering  = renderAnalysisCDFs anchor (dFields bpFieldsForger) OfInterCDF Nothing renderConfig bp
+      peersRendering    = renderAnalysisCDFs anchor (dFields bpFieldsPeers) OfInterCDF Nothing renderConfig bp
+      resourceRendering = renderAnalysisCDFs anchor (dFields mtFieldsReport) OfInterCDF Nothing renderConfig cp
 
       anchor :: Anchor
       anchor =
