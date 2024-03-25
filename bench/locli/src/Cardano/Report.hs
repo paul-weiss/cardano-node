@@ -230,12 +230,18 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
   time <- getCurrentTime
 
   let summaryRendering :: [Text]
-      summaryRendering  = renderSummary renderConfig anchor (iFields sumFieldsReport) summ
-      anomalyRendering, forgingRendering, peersRendering, resourceRendering :: [(Text, [Text])]
-      anomalyRendering  = renderAnalysisCDFs anchor (dFields bpFieldsControl) OfInterCDF Nothing renderConfig bp
-      forgingRendering  = renderAnalysisCDFs anchor (dFields bpFieldsForger) OfInterCDF Nothing renderConfig bp
-      peersRendering    = renderAnalysisCDFs anchor (dFields bpFieldsPeers) OfInterCDF Nothing renderConfig bp
-      resourceRendering = renderAnalysisCDFs anchor (dFields mtFieldsReport) OfInterCDF Nothing renderConfig cp
+      summaryRendering  = renderSummary renderConfig anchor
+                                  (iFields sumFieldsReport) summ
+      renderInternal :: (CDFFields a p, KnownCDF p, ToJSON (a p))
+                     => a p -> ((Field DSelect p a) -> Bool) -> [(Text, [Text])]
+      renderInternal xs selector
+        = renderAnalysisCDFs anchor selector OfInterCDF Nothing renderConfig xs
+      anomalyRendering, forgingRendering,
+          peersRendering, resourceRendering :: [(Text, [Text])]
+      anomalyRendering  = renderInternal bp $ dFields bpFieldsControl
+      forgingRendering  = renderInternal bp $ dFields bpFieldsForger
+      peersRendering    = renderInternal bp $ dFields bpFieldsPeers
+      resourceRendering = renderInternal cp $ dFields mtFieldsReport
 
       anchor :: Anchor
       anchor =
