@@ -826,8 +826,11 @@ runChainCommand s c@(Compare (InputDir dir) mTmpl outf@(TextOutputFile outfp) ru
       putByteString "locli runChainCommand: entering latex case\n"
       (titling, summary, resource, anomaly, forging, peers)
         <- Cardano.Report.generate' baseline deltas
-      let writef (fp, txt) = withFile fp WriteMode $
-            \hnd -> T.hPutStrLn hnd txt
+      let writef (fp, txt) = do
+               putByteString $ "locli runChainCommand: start writing " <> BSU.fromString fp <> "\n"
+               withFile fp WriteMode $
+                      \hnd -> T.hPutStrLn hnd txt
+               putByteString $ "locli runChainCommand: finish writing " <> BSU.fromString fp <> "\n"
       mapM_ writef $
         map (first (<> ".latex"))
                    [ ("titling",  titling)

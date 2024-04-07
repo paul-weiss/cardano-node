@@ -36,13 +36,19 @@ renderAsLaTeX Props{..} =
 renderAsLaTeX Table{..} =
   ["\\begin{tabular}{l" <> T.replicate (length tColHeaders) "|r" <> "}"]
   <>
-  [T.intercalate " & " row <> " \\\\" | row <- rowSet]
+  [T.intercalate " & " (map latexFixup row) <> " \\\\" | row <- rowSet]
   <>
-  [T.intercalate " & " summary <> " \\\\" | summary <- summarySet]
+  [T.intercalate " & " (map latexFixup summary) <> " \\\\" | summary <- summarySet]
   <>
   ["\\end{tabular}"] where
   rowSet = ("":tColHeaders) : transpose (tRowHeaders : tColumns)
   summarySet = transpose $ tSummaryHeaders : tSummaryValues
+
+latexFixup :: Text -> Text
+latexFixup = T.replace "%" "\\%"
+           . T.replace "&" "\\&"
+           . T.replace "#" "\\#"
+           . T.replace "_" "\\_"
 
 renderAsOrg :: Table -> [Text]
 

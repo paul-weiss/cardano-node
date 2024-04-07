@@ -63,7 +63,8 @@ module Data.CDF
 import Prelude ((!!), show)
 import Cardano.Prelude hiding (head, show)
 
-import Data.Aeson ()
+import Data.Aeson (Value (..))
+import Data.Aeson.Types (prependFailure, typeMismatch)
 import Data.SOP.Strict
 import Data.Tuple.Extra (both)
 import Data.Vector qualified as Vec
@@ -287,8 +288,22 @@ deriving instance Foldable f => Foldable (CDFList f)
 deriving instance (NFData t, NFData (f t), NFData (f [t])) => NFData (CDFList f t)
 deriving instance (Read t, Read (f t), Read (f [t])) => Read (CDFList f t)
 deriving instance (Show t, Show (f t), Show (f [t])) => Show (CDFList f t)
-deriving instance (FromJSON (f t), FromJSON (f [t]), FromJSON t) => FromJSON (CDFList f t)
-deriving instance (ToJSON (f t), ToJSON (f [t]), ToJSON t) => ToJSON (CDFList f t)
+
+instance (FromJSON (f t), FromJSON (f [t]), FromJSON t) => FromJSON (CDFList f t) where
+  parseJSON (Array a) 
+                      | null a        = pure $ CDFListMultiple []
+                      | length a == 1
+                      = parseJSON (Vec.head a) >>= pure . CDFListSingleton
+                      | otherwise
+                      = Vec.mapM parseJSON a
+                                    >>= pure . CDFListMultiple  . Vec.toList
+  parseJSON o@(Object _) = parseJSON o >>= pure . CDFListSingleton
+  parseJSON invalid =
+    prependFailure "parsing CDFList failed, "
+      (typeMismatch "Array" invalid)
+instance (ToJSON (f t), ToJSON (f [t]), ToJSON t) => ToJSON (CDFList f t) where
+  toJSON (CDFListSingleton t) = toJSON [t]
+  toJSON (CDFListMultiple xs) = toJSON xs
 
 liftCDFVal :: forall a p. Real a => a -> CDFIx p -> p a
 liftCDFVal x = \case

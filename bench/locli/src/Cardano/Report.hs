@@ -27,6 +27,7 @@ import Text.EDE hiding (Id)
 import Data.CDF
 import Data.Tuple.Extra (fst3)
 import Cardano.Render
+import Cardano.Table
 import Cardano.Util
 import Cardano.Analysis.API
 import Cardano.Analysis.Summary
@@ -235,20 +236,17 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
       renderInternal :: (CDFFields a p, KnownCDF p, ToJSON (a p))
                      => a p -> ((Field DSelect p a) -> Bool) -> [(Text, [Text])]
       renderInternal xs selector
-        = renderAnalysisCDFs anchor selector OfInterCDF Nothing renderConfig xs
+        = renderAnalysisCDFs anchor selector OfOverallDataset Nothing renderConfig xs
       anomalyRendering, forgingRendering,
           peersRendering, resourceRendering :: [(Text, [Text])]
       anomalyRendering  = renderInternal bp $ dFields bpFieldsControl
       forgingRendering  = renderInternal bp $ dFields bpFieldsForger
       peersRendering    = renderInternal bp $ dFields bpFieldsPeers
       resourceRendering = renderInternal cp $ dFields mtFieldsReport
-
       anchor :: Anchor
       anchor =
           Anchor {
               aRuns = getName summ : map (\(SomeSummary ss, _, _) -> getName ss) rest
-             -- *** XXX MAJOR BOGON XXX ***
-             -- Filters, slots and blocks should actually come from somewhere.
             , aFilters = ([], [])
             , aSlots = Nothing
             , aBlocks = Nothing
@@ -256,7 +254,7 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
             , aWhen = time
           } where getName = tag . sumMeta
   pure    $ ( titlingText ctx
-            , T.intercalate " & " summaryRendering <> " \\\\\n"
+            , unlines summaryRendering
             , fixup resourceRendering
             , fixup anomalyRendering
             , fixup forgingRendering
@@ -266,7 +264,7 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
    metas :: [Metadata]
    metas = sumMeta summ : fmap (\(SomeSummary ss, _, _) -> sumMeta ss) rest
    restTmpls = fmap ((\(SomeSummary ss) -> liftTmplRun ss) . fst3) rest
-   fixup = unlines . map ((<>" \\\\") . T.intercalate " & ") . transpose . map (uncurry (:))
+   fixup = unlines . map (T.intercalate " & ") . transpose . map (uncurry (:))
    renderConfig =
      RenderConfig {
        rcFormat = AsLaTeX
@@ -276,9 +274,10 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
    -- Authors should have "\\and" interspersed between them in LaTeX.
    -- Write this out to titling.latex
    titlingText ctx = unlines
-     $ [ "\\def\\@locliauthor{" <> unAuthor (rmAuthor ctx) <> "}"
-       , "\\def\\@loclititle{Value Workload for " <> unTag (rmTag ctx) <> "}"
-       , "\\def\\@loclidate{" <> rmDate ctx <> "}"
+     . map latexFixup
+     $ [ "\\def\\locliauthor{" <> unAuthor (rmAuthor ctx) <> "}"
+       , "\\def\\loclititle{Value Workload for " <> unTag (rmTag ctx) <> "}"
+       , "\\def\\loclidate{" <> rmDate ctx <> "}"
        ]
 
 generate :: InputDir -> Maybe TextInputFile
