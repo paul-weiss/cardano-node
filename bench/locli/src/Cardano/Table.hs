@@ -30,18 +30,27 @@ data Table
 renderAsLaTeX :: Table -> [Text]
 
 renderAsLaTeX Props{..} =
-  ["\\def\\" <> c <> "{" <> x <> "}" | (c, x) <- oProps <> oConstants]
+  [ "\\def\\" <> c <> "{" <> x <> "}" | (c, x) <- oProps <> oConstants ]
   <>
   (oBody <&> renderAsLaTeX & mconcat)
 renderAsLaTeX Table{..} =
-  ["\\begin{tabular}{l" <> T.replicate (length tColHeaders) "|r" <> "}"]
+  [ "\\begin{tabular}{l" <> T.replicate (length tColHeaders) "|r" <> "}" ]
   <>
-  [T.intercalate " & " (map latexFixup row) <> " \\\\" | row <- rowSet]
+  [ "\\hline " ]
   <>
-  [T.intercalate " & " (map latexFixup summary) <> " \\\\" | summary <- summarySet]
+  [ T.intercalate " & " (map latexFixup headerSet) <> " \\\\" ]
   <>
-  ["\\end{tabular}"] where
-  rowSet = ("":tColHeaders) : transpose (tRowHeaders : tColumns)
+  [ "\\hline " ]
+  <>
+  [ T.intercalate " & " (map latexFixup row) <> " \\\\" | row <- rowSet ]
+  <>
+  [ "\\hline " ]
+  <>
+  [ T.intercalate " & " (map latexFixup summary) <> " \\\\" | summary <- summarySet ]
+  <>
+  [ "\\end{tabular}" ] where
+  headerSet = "" : tColHeaders
+  rowSet = transpose $ tRowHeaders : tColumns
   summarySet = transpose $ tSummaryHeaders : tSummaryValues
 
 latexFixup :: Text -> Text

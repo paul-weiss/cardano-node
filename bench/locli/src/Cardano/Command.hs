@@ -809,28 +809,32 @@ runChainCommand _ c@RenderMultiSummary{} = missingCommandData c
   ["multi-run summary"]
 
 runChainCommand s c@(Compare (InputDir dir) mTmpl outf@(TextOutputFile outfp) runs) = do
-  putByteString "locli runChainCommand: entering\n"
+  let dir' = BSU.fromString dir
+      fstBS = "locli runChainCommand: "
+  putByteString $ fstBS <> "entering\n"
   progress "report" (Q $ printf "rendering report for %d runs" $ length runs)
-  putByteString "locli runChainCommand: reading JSON data\n"
+  putByteString $ fstBS <> "reading JSON data\n"
   xs :: [(SomeSummary, ClusterPerf, SomeBlockProp)] <- forM runs $
     \(sumf,cpf,bpf)->
       (,,)
       <$> readJsonData sumf (CommandError c)
       <*> readJsonData cpf  (CommandError c)
       <*> readJsonData bpf  (CommandError c)
-  putByteString "locli runChainCommand: finished reading JSON data\n"
-  let dir' = BSU.fromString dir
-  putByteString $ "locli runChainCommand: case analysing" <> dir' <> "\n"
+  putByteString $ fstBS <> "finished reading JSON data\n"
+  putByteString $ fstBS <> "case analysing" <> dir' <> "\n"
   case (takeFileName dir, xs) of
     ("latex", baseline:deltas@(_:_)) -> liftIO $ do
-      putByteString "locli runChainCommand: entering latex case\n"
+      putByteString $ fstBS <> "entering latex case\n"
       (titling, summary, resource, anomaly, forging, peers)
         <- Cardano.Report.generate' baseline deltas
       let writef (fp, txt) = do
-               putByteString $ "locli runChainCommand: start writing " <> BSU.fromString fp <> "\n"
-               withFile fp WriteMode $
+               let fp'   = outdir </> fp
+                   endBS = " writing " <> BSU.fromString fp' <> "\n"
+               putByteString $ fstBS <> "start" <> endBS
+               withFile fp' WriteMode $
                       \hnd -> T.hPutStrLn hnd txt
-               putByteString $ "locli runChainCommand: finish writing " <> BSU.fromString fp <> "\n"
+               putByteString $ fstBS <> "finish" <> endBS
+          outdir = takeDirectory outfp
       mapM_ writef $
         map (first (<> ".latex"))
                    [ ("titling",  titling)
@@ -839,27 +843,27 @@ runChainCommand s c@(Compare (InputDir dir) mTmpl outf@(TextOutputFile outfp) ru
                    , ("anomaly",  anomaly)
                    , ("forging",  forging)
                    , ("peers",    peers)]
-      putByteString "locli runChainCommand: return from latex case\n"
+      putByteString $ fstBS <> "return from latex case\n"
     ("ede", baseline:deltas@(_:_)) -> do
-      putByteString "locli runChainCommand: entering ede case\n"
+      putByteString $ fstBS <> "entering ede case\n"
       (tmpl, tmplEnv, orgReport) <- liftIO $ do
         Cardano.Report.generate (InputDir dir) mTmpl baseline deltas
       liftIO $ do
-        withFile (outfp `System.FilePath.replaceExtension` "env.json") WriteMode $
-            \hnd -> BS8.hPutStrLn hnd tmplEnv
+        withFile (outfp `System.FilePath.replaceExtension` "env.json")
+            WriteMode $ \hnd -> BS8.hPutStrLn hnd tmplEnv
         let tmplPath = Cardano.Util.replaceExtension outfp "ede"
-        unlessM (IO.fileExist tmplPath) $
-          BS.writeFile tmplPath tmpl
+        unlessM (IO.fileExist tmplPath)
+          $ BS.writeFile tmplPath tmpl
       dumpText "report" [orgReport] outf
         & firstExceptT (CommandError c)
-      putByteString "locli runChainCommand: return from ede case\n"
+      putByteString $ fstBS <> "return from ede case\n"
     (_, _:_:_) -> do
-           liftIO $ putByteString "locli runChainCommand: ede vs. latex unrecognised\n"
+           liftIO . putByteString $ fstBS <> "ede vs. latex unrecognised\n"
            throwE $ CommandError c $ mconcat
                [ "input directory neither ede nor latex." ]
     _ -> do
-           liftIO $ putByteString "locli runChainCommand: empty delta list\n"
-           throwE $ CommandError c $ mconcat
+           liftIO . putByteString $ fstBS <> "empty delta list\n"
+           throwE . CommandError c $ mconcat
                [ "At least two runs required for comparison." ]
 
 
