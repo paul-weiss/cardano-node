@@ -290,8 +290,7 @@ deriving instance (Read t, Read (f t), Read (f [t])) => Read (CDFList f t)
 deriving instance (Show t, Show (f t), Show (f [t])) => Show (CDFList f t)
 
 instance (FromJSON (f t), FromJSON (f [t]), FromJSON t) => FromJSON (CDFList f t) where
-  parseJSON (Array a) 
-                      | null a        = pure $ CDFListMultiple []
+  parseJSON (Array a) | null a        = pure $ CDFListMultiple []
                       | length a == 1
                       = parseJSON (Vec.head a) >>= pure . CDFListSingleton
                       | otherwise

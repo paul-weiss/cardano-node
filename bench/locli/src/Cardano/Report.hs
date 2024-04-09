@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Cardano.Report
   ( module Cardano.Report
   )
@@ -25,7 +26,7 @@ import System.Environment (lookupEnv)
 import Text.EDE hiding (Id)
 
 import Data.CDF
-import Data.Tuple.Extra (fst3)
+import Data.Tuple.Extra (fst3, thd3)
 import Cardano.Render
 import Cardano.Table
 import Cardano.Util
@@ -240,9 +241,60 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
       anomalyRendering, forgingRendering,
           peersRendering, resourceRendering :: [(Text, [Text])]
       anomalyRendering  = renderInternal bp $ dFields bpFieldsControl
+      -- anomalyRendering  = unlines $ renderAsLaTeX _anomalyTable
       forgingRendering  = renderInternal bp $ dFields bpFieldsForger
       peersRendering    = renderInternal bp $ dFields bpFieldsPeers
       resourceRendering = renderInternal cp $ dFields mtFieldsReport
+      _anomalyFields, _forgingFields, _peersFields :: [Field DSelect _blkt' BlockProp]
+      _anomalyFields = filterFields $ dFields bpFieldsControl
+      _forgingFields = filterFields $ dFields bpFieldsForger
+      _peersFields = filterFields $ dFields bpFieldsPeers
+      _anomalyMapFields, _forgingMapFields, _peersMapFields :: SomeBlockProp -> [Double]
+      _anomalyMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _anomalyFields ]
+      _forgingMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _forgingFields ]
+      _peersMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _peersFields ]
+      _resourceFields :: [Field DSelect cpt MachPerf]
+      _resourceFields = filterFields $ dFields mtFieldsReport
+      _resourceMapFields :: MachPerf cpt -> [Double]
+      _resourceMapFields _cp' = [ mapField _cp' cdfAverageVal f | f :: Field DSelect cpt MachPerf <- _resourceFields ]
+      _mkDelta :: Double -> Double -> (Double, Double, Double)
+      _mkDelta x y = (y, y - x, (y - x) / x)
+      _anomalyBaseline, _forgingBaseline, _peersBaseline, _resourceBaseline :: [Double]
+      _anomalyBaseline  = _anomalyMapFields  $ SomeBlockProp bp
+      _forgingBaseline  = _forgingMapFields  $ SomeBlockProp bp
+      _peersBaseline    = _peersMapFields    $ SomeBlockProp bp
+      _resourceBaseline = _resourceMapFields $ cp
+      -- The innermost tuple is a chunk of a row corresponding to a single run.
+      -- Before transpose, the inner list corresponds to fields / rows varying.
+      -- Before transpose, the outer list corresponds to runs varying.
+      _anomalyMkDeltas  :: SomeBlockProp -> [(Double, Double, Double)]
+      _anomalyMkDeltas  = zipWith _mkDelta _anomalyBaseline . _anomalyMapFields
+      _anomalyRows :: [[Double]]
+      _anomalyRows      = (_anomalyBaseline :)
+                        . transpose
+                        . map (concatMap $ \(u, v, w) -> [u, v, w])
+                        . transpose
+                        $ map (_anomalyMkDeltas . thd3) rest
+      _columnNames :: [Text]
+      _columnNames = let h : t = aRuns anchor
+                     in h : concatMap (\run -> [run, "\\Delta", "\\Delta%"]) t
+      _anomalyText :: [[Text]]
+      _anomalyText     = ("" : _columnNames)
+                       : zipWith (:) (map fShortDesc _anomalyFields)
+                                     (map (map $ formatDouble W6) _anomalyRows)
+      _anomalyTable :: Table
+      _anomalyTable
+        = Table {
+             tColHeaders     = _columnNames
+          ,  tColumns        = map (map $ formatDouble W6) _anomalyRows
+          ,  tExtended       = False
+          ,  tApexHeader     = Nothing
+          ,  tRowHeaders     = map fShortDesc _anomalyFields
+          ,  tSummaryHeaders = aRuns anchor
+          ,  tSummaryValues  = [[]]
+          ,  tFormula        = []
+          ,  tConstants      = []
+          }
       anchor :: Anchor
       anchor =
           Anchor {
@@ -256,7 +308,7 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
   pure    $ ( titlingText ctx
             , unlines summaryRendering
             , fixup resourceRendering
-            , fixup anomalyRendering
+            , fixup anomalyRendering `seq` unlines (renderAsLaTeX _anomalyTable)
             , fixup forgingRendering
             , fixup peersRendering
             )
