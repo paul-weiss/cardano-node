@@ -240,56 +240,51 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
         = renderAnalysisCDFs anchor selector OfOverallDataset Nothing renderConfig xs
       anomalyRendering, forgingRendering,
           peersRendering, resourceRendering :: [(Text, [Text])]
-      anomalyRendering  = renderInternal bp $ dFields bpFieldsControl
-      -- anomalyRendering  = unlines $ renderAsLaTeX _anomalyTable
+      anomalyRendering  = [("", renderAsLaTeX anomalyTable)]
       forgingRendering  = renderInternal bp $ dFields bpFieldsForger
       peersRendering    = renderInternal bp $ dFields bpFieldsPeers
       resourceRendering = renderInternal cp $ dFields mtFieldsReport
-      _anomalyFields, _forgingFields, _peersFields :: [Field DSelect _blkt' BlockProp]
-      _anomalyFields = filterFields $ dFields bpFieldsControl
+      anomalyFields, _forgingFields, _peersFields :: [Field DSelect _blkt' BlockProp]
+      anomalyFields = filterFields $ dFields bpFieldsControl
       _forgingFields = filterFields $ dFields bpFieldsForger
       _peersFields = filterFields $ dFields bpFieldsPeers
-      _anomalyMapFields, _forgingMapFields, _peersMapFields :: SomeBlockProp -> [Double]
-      _anomalyMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _anomalyFields ]
-      _forgingMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _forgingFields ]
-      _peersMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _peersFields ]
       _resourceFields :: [Field DSelect cpt MachPerf]
       _resourceFields = filterFields $ dFields mtFieldsReport
+      anomalyMapFields, _forgingMapFields, _peersMapFields :: SomeBlockProp -> [Double]
+      anomalyMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- anomalyFields ]
+      _forgingMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _forgingFields ]
+      _peersMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _peersFields ]
       _resourceMapFields :: MachPerf cpt -> [Double]
       _resourceMapFields _cp' = [ mapField _cp' cdfAverageVal f | f :: Field DSelect cpt MachPerf <- _resourceFields ]
       _mkDelta :: Double -> Double -> (Double, Double, Double)
       _mkDelta x y = (y, y - x, (y - x) / x)
-      _anomalyBaseline, _forgingBaseline, _peersBaseline, _resourceBaseline :: [Double]
-      _anomalyBaseline  = _anomalyMapFields  $ SomeBlockProp bp
+      anomalyBaseline, _forgingBaseline, _peersBaseline, _resourceBaseline :: [Double]
+      anomalyBaseline  = anomalyMapFields  $ SomeBlockProp bp
       _forgingBaseline  = _forgingMapFields  $ SomeBlockProp bp
       _peersBaseline    = _peersMapFields    $ SomeBlockProp bp
       _resourceBaseline = _resourceMapFields $ cp
       -- The innermost tuple is a chunk of a row corresponding to a single run.
       -- Before transpose, the inner list corresponds to fields / rows varying.
       -- Before transpose, the outer list corresponds to runs varying.
-      _anomalyMkDeltas  :: SomeBlockProp -> [(Double, Double, Double)]
-      _anomalyMkDeltas  = zipWith _mkDelta _anomalyBaseline . _anomalyMapFields
-      _anomalyRows :: [[Double]]
-      _anomalyRows      = (_anomalyBaseline :)
+      anomalyMkDeltas  :: SomeBlockProp -> [(Double, Double, Double)]
+      anomalyMkDeltas  = zipWith _mkDelta anomalyBaseline . anomalyMapFields
+      anomalyRows :: [[Double]]
+      anomalyRows      = (anomalyBaseline :)
                         . transpose
                         . map (concatMap $ \(u, v, w) -> [u, v, w])
                         . transpose
-                        $ map (_anomalyMkDeltas . thd3) rest
+                        $ map (anomalyMkDeltas . thd3) rest
       _columnNames :: [Text]
       _columnNames = let h : t = aRuns anchor
                      in h : concatMap (\run -> [run, "\\Delta", "\\Delta%"]) t
-      _anomalyText :: [[Text]]
-      _anomalyText     = ("" : _columnNames)
-                       : zipWith (:) (map fShortDesc _anomalyFields)
-                                     (map (map $ formatDouble W6) _anomalyRows)
-      _anomalyTable :: Table
-      _anomalyTable
+      anomalyTable :: Table
+      anomalyTable
         = Table {
              tColHeaders     = _columnNames
-          ,  tColumns        = map (map $ formatDouble W6) _anomalyRows
+          ,  tColumns        = map (map $ formatDouble W6) anomalyRows
           ,  tExtended       = False
           ,  tApexHeader     = Nothing
-          ,  tRowHeaders     = map fShortDesc _anomalyFields
+          ,  tRowHeaders     = map fShortDesc anomalyFields
           ,  tSummaryHeaders = aRuns anchor
           ,  tSummaryValues  = [[]]
           ,  tFormula        = []
@@ -308,7 +303,7 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
   pure    $ ( titlingText ctx
             , unlines summaryRendering
             , fixup resourceRendering
-            , fixup anomalyRendering `seq` unlines (renderAsLaTeX _anomalyTable)
+            , fixup anomalyRendering
             , fixup forgingRendering
             , fixup peersRendering
             )
@@ -323,7 +318,7 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
      , rcDateVerMetadata = False
      , rcRunMetadata = False
      }
-   -- Authors should have "\\and" interspersed between them in LaTeX.
+   -- FIXME: Authors should have "\\and" interspersed between them in LaTeX.
    -- Write this out to titling.latex
    titlingText ctx = unlines
      . map latexFixup
