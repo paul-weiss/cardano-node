@@ -26,7 +26,7 @@ import System.Environment (lookupEnv)
 import Text.EDE hiding (Id)
 
 import Data.CDF
-import Data.Tuple.Extra (fst3, thd3)
+import Data.Tuple.Extra (fst3, snd3, thd3)
 import Cardano.Render
 import Cardano.Table
 import Cardano.Util
@@ -225,72 +225,12 @@ instance ToJSON TmplSection where
 
 generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
           -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
-          -- summary, resource, anomaly, forging, peers
+          -- The result tuple is: summary, resource, anomaly, forging, peers
           -> IO (Text, Text, Text, Text, Text, Text)
 generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
   ctx <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
   time <- getCurrentTime
-
-  let summaryRendering :: [Text]
-      summaryRendering  = renderSummary renderConfig anchor
-                                  (iFields sumFieldsReport) summ
-      renderInternal :: (CDFFields a p, KnownCDF p, ToJSON (a p))
-                     => a p -> ((Field DSelect p a) -> Bool) -> [(Text, [Text])]
-      renderInternal xs selector
-        = renderAnalysisCDFs anchor selector OfOverallDataset Nothing renderConfig xs
-      anomalyRendering, forgingRendering,
-          peersRendering, resourceRendering :: [(Text, [Text])]
-      anomalyRendering  = [("", renderAsLaTeX anomalyTable)]
-      forgingRendering  = renderInternal bp $ dFields bpFieldsForger
-      peersRendering    = renderInternal bp $ dFields bpFieldsPeers
-      resourceRendering = renderInternal cp $ dFields mtFieldsReport
-      anomalyFields, _forgingFields, _peersFields :: [Field DSelect _blkt' BlockProp]
-      anomalyFields = filterFields $ dFields bpFieldsControl
-      _forgingFields = filterFields $ dFields bpFieldsForger
-      _peersFields = filterFields $ dFields bpFieldsPeers
-      _resourceFields :: [Field DSelect cpt MachPerf]
-      _resourceFields = filterFields $ dFields mtFieldsReport
-      anomalyMapFields, _forgingMapFields, _peersMapFields :: SomeBlockProp -> [Double]
-      anomalyMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- anomalyFields ]
-      _forgingMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _forgingFields ]
-      _peersMapFields (SomeBlockProp (_bp' :: BlockProp _bpt')) = [ mapField _bp' cdfAverageVal f | f :: Field DSelect _bpt' BlockProp <- _peersFields ]
-      _resourceMapFields :: MachPerf cpt -> [Double]
-      _resourceMapFields _cp' = [ mapField _cp' cdfAverageVal f | f :: Field DSelect cpt MachPerf <- _resourceFields ]
-      _mkDelta :: Double -> Double -> (Double, Double, Double)
-      _mkDelta x y = (y, y - x, (y - x) / x)
-      anomalyBaseline, _forgingBaseline, _peersBaseline, _resourceBaseline :: [Double]
-      anomalyBaseline  = anomalyMapFields  $ SomeBlockProp bp
-      _forgingBaseline  = _forgingMapFields  $ SomeBlockProp bp
-      _peersBaseline    = _peersMapFields    $ SomeBlockProp bp
-      _resourceBaseline = _resourceMapFields $ cp
-      -- The innermost tuple is a chunk of a row corresponding to a single run.
-      -- Before transpose, the inner list corresponds to fields / rows varying.
-      -- Before transpose, the outer list corresponds to runs varying.
-      anomalyMkDeltas  :: SomeBlockProp -> [(Double, Double, Double)]
-      anomalyMkDeltas  = zipWith _mkDelta anomalyBaseline . anomalyMapFields
-      anomalyRows :: [[Double]]
-      anomalyRows      = (anomalyBaseline :)
-                        . transpose
-                        . map (concatMap $ \(u, v, w) -> [u, v, w])
-                        . transpose
-                        $ map (anomalyMkDeltas . thd3) rest
-      _columnNames :: [Text]
-      _columnNames = let h : t = aRuns anchor
-                     in h : concatMap (\run -> [run, "\\Delta", "\\Delta%"]) t
-      anomalyTable :: Table
-      anomalyTable
-        = Table {
-             tColHeaders     = _columnNames
-          ,  tColumns        = map (map $ formatDouble W6) anomalyRows
-          ,  tExtended       = False
-          ,  tApexHeader     = Nothing
-          ,  tRowHeaders     = map fShortDesc anomalyFields
-          ,  tSummaryHeaders = aRuns anchor
-          ,  tSummaryValues  = [[]]
-          ,  tFormula        = []
-          ,  tConstants      = []
-          }
-      anchor :: Anchor
+  let anchor :: Anchor
       anchor =
           Anchor {
               aRuns = getName summ : map (\(SomeSummary ss, _, _) -> getName ss) rest
@@ -300,18 +240,34 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
             , aVersion = getLocliVersion
             , aWhen = time
           } where getName = tag . sumMeta
+      mkTable :: [Field select con functor] -> [[Double]] -> Table
+      mkTable fields rows
+        = Table {
+             tColHeaders
+                 = let h : t = aRuns anchor
+                    in h : concatMap (\run -> [run, "\\Delta", "\\Delta%"]) t
+          ,  tColumns        = map (map $ formatDouble W6) rows
+          ,  tExtended       = False
+          ,  tApexHeader     = Nothing
+          ,  tRowHeaders     = map fShortDesc fields
+          ,  tSummaryHeaders = aRuns anchor
+          ,  tSummaryValues  = [[]]
+          ,  tFormula        = []
+          ,  tConstants      = []
+          }
+
   pure    $ ( titlingText ctx
-            , unlines summaryRendering
-            , fixup resourceRendering
-            , fixup anomalyRendering
-            , fixup forgingRendering
-            , fixup peersRendering
+            , unlines $ renderSummary renderConfig anchor
+                                  (iFields sumFieldsReport) summ
+            , unlines . renderAsLaTeX $ mkTable resourceFields resourceRows
+            , unlines . renderAsLaTeX $ mkTable anomalyFields  anomalyRows
+            , unlines . renderAsLaTeX $ mkTable forgingFields  forgingRows
+            , unlines . renderAsLaTeX $ mkTable peersFields    peersRows
             )
   where
    metas :: [Metadata]
    metas = sumMeta summ : fmap (\(SomeSummary ss, _, _) -> sumMeta ss) rest
    restTmpls = fmap ((\(SomeSummary ss) -> liftTmplRun ss) . fst3) rest
-   fixup = unlines . map (T.intercalate " & ") . transpose . map (uncurry (:))
    renderConfig =
      RenderConfig {
        rcFormat = AsLaTeX
@@ -326,6 +282,54 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
        , "\\def\\loclititle{Value Workload for " <> unTag (rmTag ctx) <> "}"
        , "\\def\\loclidate{" <> rmDate ctx <> "}"
        ]
+   anomalyFields, forgingFields, peersFields :: [Field DSelect _blkt' BlockProp]
+   anomalyFields  = filterFields $ dFields bpFieldsControl
+   forgingFields  = filterFields $ dFields bpFieldsForger
+   peersFields    = filterFields $ dFields bpFieldsPeers
+   resourceFields :: [Field DSelect cpt MachPerf]
+   resourceFields = filterFields $ dFields mtFieldsReport
+
+   mapBlkFields :: [FieldName] -> SomeBlockProp -> [Double]
+   mapBlkFields fields (SomeBlockProp (bp' :: BlockProp _bpt'))
+     = [ mapField bp' cdfAverageVal f | f <- filterFields $ dFields fields ]
+   anomalyMapFields, forgingMapFields, peersMapFields :: SomeBlockProp -> [Double]
+   anomalyMapFields = mapBlkFields bpFieldsControl
+   forgingMapFields = mapBlkFields bpFieldsForger
+   peersMapFields   = mapBlkFields bpFieldsPeers
+   resourceMapFields :: MachPerf cpt -> [Double]
+   resourceMapFields cp'
+     = [ mapField cp' cdfAverageVal f | f <- resourceFields ]
+
+   anomalyBaseline, forgingBaseline, peersBaseline, resourceBaseline :: [Double]
+   anomalyBaseline  = anomalyMapFields  $ SomeBlockProp bp
+   forgingBaseline  = forgingMapFields  $ SomeBlockProp bp
+   peersBaseline    = peersMapFields    $ SomeBlockProp bp
+   resourceBaseline = resourceMapFields $ cp
+
+   -- The innermost tuple is a chunk of a row corresponding to a single run.
+   -- Before transpose, the inner list corresponds to fields / rows varying.
+   -- Before transpose, the outer list corresponds to runs varying.
+   mkDelta :: Double -> Double -> (Double, Double, Double)
+   mkDelta x y = (y, y - x, (y - x) / x)
+   anomalyMkDeltas, forgingMkDeltas, peersMkDeltas :: SomeBlockProp -> [(Double, Double, Double)]
+   anomalyMkDeltas  = zipWith mkDelta anomalyBaseline  . anomalyMapFields
+   forgingMkDeltas = zipWith mkDelta forgingBaseline . forgingMapFields
+   peersMkDeltas   = zipWith mkDelta peersBaseline   . peersMapFields
+   resourceMkDeltas :: MachPerf cpt -> [(Double, Double, Double)]
+   resourceMkDeltas = zipWith mkDelta resourceBaseline . resourceMapFields
+
+   mkRows :: [Double] -> ((SomeSummary, ClusterPerf, SomeBlockProp) -> [(Double, Double, Double)]) -> [[Double]]
+   mkRows baseline project
+                    = (baseline :)
+                    . transpose
+                    . map (concatMap $ \(u, v, w) -> [u, v, w])
+                    . transpose
+                    $ map project rest
+   anomalyRows, forgingRows, peersRows, resourceRows :: [[Double]]
+   anomalyRows      = mkRows anomalyBaseline  $ anomalyMkDeltas  . thd3
+   forgingRows      = mkRows forgingBaseline  $ forgingMkDeltas  . thd3
+   peersRows        = mkRows peersBaseline    $ peersMkDeltas    . thd3
+   resourceRows     = mkRows resourceBaseline $ resourceMkDeltas . snd3
 
 generate :: InputDir -> Maybe TextInputFile
          -> (SomeSummary, ClusterPerf, SomeBlockProp) -> [(SomeSummary, ClusterPerf, SomeBlockProp)]

@@ -9,7 +9,6 @@ import Data.Aeson.Text                  qualified as Aeson
 import Data.ByteString                  qualified as BS
 import Data.ByteString.Lazy.Char8       qualified as LBS
 import Data.ByteString.Char8            qualified as BS8
-import Data.ByteString.UTF8             qualified as BSU
 import Data.Map                         qualified as Map
 import Data.Text                        (pack)
 import Data.Text                        qualified as T
@@ -809,31 +808,20 @@ runChainCommand _ c@RenderMultiSummary{} = missingCommandData c
   ["multi-run summary"]
 
 runChainCommand s c@(Compare (InputDir dir) mTmpl outf@(TextOutputFile outfp) runs) = do
-  let dir' = BSU.fromString dir
-      fstBS = "locli runChainCommand: "
-  putByteString $ fstBS <> "entering\n"
   progress "report" (Q $ printf "rendering report for %d runs" $ length runs)
-  putByteString $ fstBS <> "reading JSON data\n"
   xs :: [(SomeSummary, ClusterPerf, SomeBlockProp)] <- forM runs $
     \(sumf,cpf,bpf)->
       (,,)
       <$> readJsonData sumf (CommandError c)
       <*> readJsonData cpf  (CommandError c)
       <*> readJsonData bpf  (CommandError c)
-  putByteString $ fstBS <> "finished reading JSON data\n"
-  putByteString $ fstBS <> "case analysing" <> dir' <> "\n"
   case (takeFileName dir, xs) of
     ("latex", baseline:deltas@(_:_)) -> liftIO $ do
-      putByteString $ fstBS <> "entering latex case\n"
       (titling, summary, resource, anomaly, forging, peers)
         <- Cardano.Report.generate' baseline deltas
       let writef (fp, txt) = do
-               let fp'   = outdir </> fp
-                   endBS = " writing " <> BSU.fromString fp' <> "\n"
-               putByteString $ fstBS <> "start" <> endBS
-               withFile fp' WriteMode $
+               withFile (outdir </> fp) WriteMode $
                       \hnd -> T.hPutStrLn hnd txt
-               putByteString $ fstBS <> "finish" <> endBS
           outdir = takeDirectory outfp
       mapM_ writef $
         map (first (<> ".latex"))
@@ -843,9 +831,7 @@ runChainCommand s c@(Compare (InputDir dir) mTmpl outf@(TextOutputFile outfp) ru
                    , ("anomaly",  anomaly)
                    , ("forging",  forging)
                    , ("peers",    peers)]
-      putByteString $ fstBS <> "return from latex case\n"
     ("ede", baseline:deltas@(_:_)) -> do
-      putByteString $ fstBS <> "entering ede case\n"
       (tmpl, tmplEnv, orgReport) <- liftIO $ do
         Cardano.Report.generate (InputDir dir) mTmpl baseline deltas
       liftIO $ do
@@ -856,13 +842,10 @@ runChainCommand s c@(Compare (InputDir dir) mTmpl outf@(TextOutputFile outfp) ru
           $ BS.writeFile tmplPath tmpl
       dumpText "report" [orgReport] outf
         & firstExceptT (CommandError c)
-      putByteString $ fstBS <> "return from ede case\n"
     (_, _:_:_) -> do
-           liftIO . putByteString $ fstBS <> "ede vs. latex unrecognised\n"
            throwE $ CommandError c $ mconcat
                [ "input directory neither ede nor latex." ]
     _ -> do
-           liftIO . putByteString $ fstBS <> "empty delta list\n"
            throwE . CommandError c $ mconcat
                [ "At least two runs required for comparison." ]
 
@@ -897,9 +880,7 @@ runCommand :: Command -> ExceptT CommandError IO ()
 
 runCommand (ChainCommand cs) = do
   now <- liftIO getCurrentTime
-  liftIO $ putByteString "locli runCommand: entering\n"
   foldM_ runChainCommand (initialState now) cs
-  liftIO $ putByteString "locli runCommand: returning\n"
  where
    initialState :: UTCTime -> State
    initialState now =
