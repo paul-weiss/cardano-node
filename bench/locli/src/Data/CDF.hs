@@ -14,7 +14,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wwarn #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 {- HLINT ignore "Use infix" -}
 

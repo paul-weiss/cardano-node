@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Cardano.Report
@@ -31,7 +32,6 @@ import Cardano.Table
 import Cardano.Util
 import Cardano.Analysis.API
 import Cardano.Analysis.Summary
-
 
 newtype Author   = Author   { unAuthor   :: Text } deriving newtype (FromJSON, ToJSON)
 newtype ShortId  = ShortId  { unShortId  :: Text } deriving newtype (FromJSON, ToJSON)
