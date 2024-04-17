@@ -175,11 +175,9 @@ data CDF p a =
   , cdfRange     :: Interval a
   , cdfSamples   :: [(Centile, p a)]
   }
-  deriving (Functor, Generic)
+  deriving (Functor, Generic, Foldable)
 
 deriving instance (Eq     a, Eq     (p a), Eq     (p Double)) => Eq     (CDF p a)
-deriving instance Foldable p => Foldable (CDF p)
-deriving instance (Read   a, Read   (p a), Read   (p Double)) => Read   (CDF p a)
 deriving instance (Show   a, Show   (p a), Show   (p Double)) => Show   (CDF p a)
 deriving instance (NFData a, NFData (p a), NFData (p Double)) => NFData (CDF p a)
 
@@ -282,9 +280,8 @@ data CDFList (f :: Type -> Type) t
   deriving (Generic, Foldable)
 
 deriving instance (Eq t, Eq (f t), Eq (f [t])) => Eq (CDFList f t)
-deriving instance (NFData t, NFData (f t), NFData (f [t])) => NFData (CDFList f t)
-deriving instance (Read t, Read (f t), Read (f [t])) => Read (CDFList f t)
 deriving instance (Show t, Show (f t), Show (f [t])) => Show (CDFList f t)
+deriving instance (NFData t, NFData (f t), NFData (f [t])) => NFData (CDFList f t)
 
 instance (FromJSON (f t), FromJSON (f [t]), FromJSON t) => FromJSON (CDFList f t) where
   parseJSON (Array a) | null a        = pure $ CDFListMultiple []
