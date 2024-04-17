@@ -183,9 +183,7 @@ renderSummaryProps rc a fieldSelr summ =
     { tColHeaders     = ["Value"]
     , tExtended       = True
     , tApexHeader     = Just "Parameter"
-    , tColumns        = --transpose $
-                        [fields' <&> renderScalarLim (Just 32) summ]
-    -- , tColumns        = [kvs <&> snd]
+    , tColumns        = [fields' <&> renderScalarLim (Just 32) summ]
     , tRowHeaders     = fields' <&> fShortDesc
     , tSummaryHeaders = []
     , tSummaryValues  = []

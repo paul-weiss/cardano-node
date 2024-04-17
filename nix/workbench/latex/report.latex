@@ -1,6 +1,4 @@
 \documentclass{report}[a4paper,7pt]
-\usepackage{amsmath}
-\usepackage{unicode-math}
 \usepackage[margin=0.5in]{geometry}
 \usepackage{setspace}
 \onehalfspacing

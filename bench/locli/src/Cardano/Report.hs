@@ -11,7 +11,7 @@ module Cardano.Report
   )
 where
 
-import Cardano.Prelude
+import Cardano.Prelude hiding (head)
 
 import Data.Aeson.Encode.Pretty qualified as AEP
 import Data.ByteString      qualified as BS
@@ -228,7 +228,8 @@ generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
           -- The result tuple is: summary, resource, anomaly, forging, peers
           -> IO (Text, Text, Text, Text, Text, Text)
 generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
-  ctx <- getReport metas (last restTmpls & trManifest & getComponent "cardano-node" & ciVersion)
+  ctx <- getReport metas . ciVersion . getComponent "cardano-node"
+                                     . trManifest $ last restTmpls
   time <- getCurrentTime
   let anchor :: Anchor
       anchor =
@@ -239,30 +240,47 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
             , aBlocks = Nothing
             , aVersion = getLocliVersion
             , aWhen = time
-          } where getName = tag . sumMeta
-      mkTable :: [Field select con functor] -> [[Double]] -> Table
-      mkTable fields rows
+          }
+      -- FIXME: normalise the run names properly
+      getName :: Summary _con -> Text
+      getName Summary {sumMeta=Metadata{..}}
+         = case getComponent "cardano-node" manifest of
+              ComponentInfo {ciVersion=Version{..},..}
+                 -> unVersion <> maybe "" (("-"<>) . unBranch) ciBranch
+      -- FIXME: Authors should have "\\and" interspersed between them in LaTeX.
+      --        As ReportMeta now stands, rmAuthor understands just one author.
+      --        Plutus vs. Value workloads need to be distinguished, too.
+      titlingText = unlines
+        . map latexFixup
+        $ [ "\\def\\locliauthor{" <> unAuthor (rmAuthor ctx) <> "}"
+          , "\\def\\loclititle{Value Workload for " <> unTag (rmTag ctx) <> "}"
+          , "\\def\\loclidate{" <> rmDate ctx <> "}"
+          ]
+      mkTable :: [Int] -> [Field select con functor] -> [[Double]] -> Table
+      mkTable sizes fields rows
         = Table {
              tColHeaders
                  = let h : t = aRuns anchor
-                    in h : concatMap (\run -> [run, "\\Delta", "\\Delta%"]) t
+                    -- hex escape sequence for majuscule Greek delta
+                    in h : concatMap (\run -> [run, "\x394", "\x394%"]) t
           ,  tColumns        = map (map $ formatDouble W6) rows
           ,  tExtended       = False
           ,  tApexHeader     = Nothing
           ,  tRowHeaders     = map fShortDesc fields
-          ,  tSummaryHeaders = aRuns anchor
-          ,  tSummaryValues  = [[]]
+          ,  tSummaryHeaders = []
+          ,  tSummaryValues  = []
           ,  tFormula        = []
-          ,  tConstants      = []
+          -- FIXME: This doesn't match the EDE output.
+          ,  tConstants      = [("nSamples", formatInt W4 $ head sizes)]
           }
 
-  pure    $ ( titlingText ctx
+  pure    $ ( titlingText
             , unlines $ renderSummary renderConfig anchor
                                   (iFields sumFieldsReport) summ
-            , unlines . renderAsLaTeX $ mkTable resourceFields resourceRows
-            , unlines . renderAsLaTeX $ mkTable anomalyFields  anomalyRows
-            , unlines . renderAsLaTeX $ mkTable forgingFields  forgingRows
-            , unlines . renderAsLaTeX $ mkTable peersFields    peersRows
+            , unlines . renderAsLaTeX $ mkTable (map head resourceSamples) resourceFields resourceRows
+            , unlines . renderAsLaTeX $ mkTable (map head anomalySamples)  anomalyFields  anomalyRows
+            , unlines . renderAsLaTeX $ mkTable (map head forgingSamples)  forgingFields  forgingRows
+            , unlines . renderAsLaTeX $ mkTable (map head peersSamples)    peersFields    peersRows
             )
   where
    metas :: [Metadata]
@@ -274,14 +292,6 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
      , rcDateVerMetadata = False
      , rcRunMetadata = False
      }
-   -- FIXME: Authors should have "\\and" interspersed between them in LaTeX.
-   -- Write this out to titling.latex
-   titlingText ctx = unlines
-     . map latexFixup
-     $ [ "\\def\\locliauthor{" <> unAuthor (rmAuthor ctx) <> "}"
-       , "\\def\\loclititle{Value Workload for " <> unTag (rmTag ctx) <> "}"
-       , "\\def\\loclidate{" <> rmDate ctx <> "}"
-       ]
    anomalyFields, forgingFields, peersFields :: [Field DSelect _blkt' BlockProp]
    anomalyFields  = filterFields $ dFields bpFieldsControl
    forgingFields  = filterFields $ dFields bpFieldsForger
@@ -300,17 +310,26 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
    resourceMapFields cp'
      = [ mapField cp' cdfAverageVal f | f <- resourceFields ]
 
+   mapBlkSizes :: [FieldName] -> SomeBlockProp -> [Int]
+   mapBlkSizes fields (SomeBlockProp (bp' :: BlockProp _bpt'))
+     = [ mapField bp' cdfSize f | f <- filterFields $ dFields fields ]
+   anomalySamples, forgingSamples, peersSamples, resourceSamples :: [[Int]]
+   anomalySamples  = map (mapBlkSizes bpFieldsControl) $ SomeBlockProp bp : map thd3 rest
+   forgingSamples  = map (mapBlkSizes bpFieldsForger)  $ SomeBlockProp bp : map thd3 rest
+   peersSamples    = map (mapBlkSizes bpFieldsPeers)   $ SomeBlockProp bp : map thd3 rest
+   resourceSamples = map (\c -> [mapField c cdfSize f | f <- resourceFields]) $ cp : map snd3 rest
+
    anomalyBaseline, forgingBaseline, peersBaseline, resourceBaseline :: [Double]
    anomalyBaseline  = anomalyMapFields  $ SomeBlockProp bp
    forgingBaseline  = forgingMapFields  $ SomeBlockProp bp
    peersBaseline    = peersMapFields    $ SomeBlockProp bp
-   resourceBaseline = resourceMapFields $ cp
+   resourceBaseline = resourceMapFields $               cp
 
    -- The innermost tuple is a chunk of a row corresponding to a single run.
    -- Before transpose, the inner list corresponds to fields / rows varying.
    -- Before transpose, the outer list corresponds to runs varying.
    mkDelta :: Double -> Double -> (Double, Double, Double)
-   mkDelta x y = (y, y - x, (y - x) / x)
+   mkDelta x y = (y, y - x, 100 * (y - x) / x)
    anomalyMkDeltas, forgingMkDeltas, peersMkDeltas :: SomeBlockProp -> [(Double, Double, Double)]
    anomalyMkDeltas  = zipWith mkDelta anomalyBaseline  . anomalyMapFields
    forgingMkDeltas = zipWith mkDelta forgingBaseline . forgingMapFields
