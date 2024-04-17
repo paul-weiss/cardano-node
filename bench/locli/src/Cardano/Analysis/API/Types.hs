@@ -184,6 +184,7 @@ type    ClusterPerf  = MachPerf (CDF I)
 --   Same as above, since we collapse [CDF I] into CDF I -- just with more statistical confidence.
 newtype MultiClusterPerf
   = MultiClusterPerf { unMultiClusterPerf :: ClusterPerf }
+  deriving newtype (FromJSON)
 
 -- * BlockProp
 --
