@@ -14,6 +14,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wwarn #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 {- HLINT ignore "Use infix" -}
 
@@ -63,7 +64,6 @@ module Data.CDF
 import Prelude ((!!), show)
 import Cardano.Prelude hiding (head, show)
 
-import Data.Aeson (Value (..))
 import Data.Aeson.Types (prependFailure, typeMismatch)
 import Data.SOP.Strict
 import Data.Tuple.Extra (both)
@@ -178,7 +178,6 @@ data CDF p a =
   }
   deriving (Functor, Generic)
 
-deriving instance Foldable Interval
 deriving instance (Eq     a, Eq     (p a), Eq     (p Double)) => Eq     (CDF p a)
 deriving instance Foldable p => Foldable (CDF p)
 deriving instance (Read   a, Read   (p a), Read   (p Double)) => Read   (CDF p a)
@@ -281,10 +280,9 @@ instance KnownCDF (CDF I) where cdfIx = CDF2
 data CDFList (f :: Type -> Type) t
   = CDFListSingleton t
   | CDFListMultiple [t]
+  deriving (Generic, Foldable)
 
-deriving instance Generic (CDFList f t)
 deriving instance (Eq t, Eq (f t), Eq (f [t])) => Eq (CDFList f t)
-deriving instance Foldable f => Foldable (CDFList f)
 deriving instance (NFData t, NFData (f t), NFData (f [t])) => NFData (CDFList f t)
 deriving instance (Read t, Read (f t), Read (f [t])) => Read (CDFList f t)
 deriving instance (Show t, Show (f t), Show (f [t])) => Show (CDFList f t)

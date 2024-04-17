@@ -32,6 +32,7 @@ import Cardano.Util
 import Cardano.Analysis.API
 import Cardano.Analysis.Summary
 
+
 newtype Author   = Author   { unAuthor   :: Text } deriving newtype (FromJSON, ToJSON)
 newtype ShortId  = ShortId  { unShortId  :: Text } deriving newtype (FromJSON, ToJSON)
 newtype Tag      = Tag      { unTag      :: Text } deriving newtype (FromJSON, ToJSON)
