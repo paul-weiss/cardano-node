@@ -15,7 +15,7 @@ import Prelude                          (id, show)
 import Cardano.Prelude                  hiding (head, show)
 
 import Data.Aeson.Text                  (encodeToLazyText)
-import Data.List                        (dropWhileEnd)
+import Data.List                        (dropWhileEnd, lookup)
 import Data.Map.Strict                  qualified as Map
 import Data.Text                        qualified as T
 import Data.Text.Lazy                   qualified as LT
@@ -135,24 +135,24 @@ justifyProp    w = T.center        w ' '
 renderCentiles :: Int -> [Centile] -> [Text]
 renderCentiles wi = fmap (T.take wi . T.pack . printf "%f" . unCentile)
 
-renderScalarLim  :: Maybe Int -> a -> Field ISelect I a -> Text
-renderScalarLim wLim v Field{..} =
-  let wi = unWidth fWidth <|> wLim
-           & fromMaybe (error "renderScalar:  request to render a width-free-field, without a supplied width limit.")
-      packWi  = T.pack.take wi
-      showDt  = handleStrOverflowFloat wi.renderDiffTime
-      showInt = T.pack.printf "%d"
-      showW64 = T.pack.printf "%d"
-  in case fSelect of
-    IInt     (($ v)->x) ->                 showInt x
-    IWord64M (($ v)->x) -> smaybe "---"    showW64 x
-    IWord64  (($ v)->x) ->                 showW64 x
-    IFloat   (($ v)->x) ->      packWi $ printf "%F" x
-    IDeltaTM (($ v)->x) -> smaybe "---"     showDt x
-    IDeltaT  (($ v)->x) ->                  showDt x
-    IDate    (($ v)->x) -> packWi $ take 10 $ show x
-    ITime    (($ v)->x) -> packWi $ take  8 $ drop 11 $ show x
-    IText    (($ v)->x) -> T.take wi . T.dropWhileEnd (== 's') $ x
+renderScalarLim :: Maybe Int -> Width -> ISelect I a -> (a -> Text)
+renderScalarLim wLim width = \case
+  IInt     intFunc    ->                             showInt . intFunc
+  IWord64M iwordFunc  -> smaybe "---"                showW64 . iwordFunc
+  IWord64  iwordFunc  ->                             showW64 . iwordFunc
+  IFloat   iFloatFunc -> packWi                . printf "%F" . iFloatFunc
+  IDeltaTM iDeltaFunc -> smaybe "---"                 showDt . iDeltaFunc
+  IDeltaT  iDeltaFunc ->                              showDt . iDeltaFunc
+  IDate    iDateFunc  -> packWi . take 10           . show   . iDateFunc
+  ITime    iTimeFunc  -> packWi . take  8 . drop 11 . show   . iTimeFunc
+  IText    iTextFunc  -> T.take wi . T.dropWhileEnd (== 's') . iTextFunc
+  where wi      = unWidth width <|> wLim
+                & fromMaybe (error $ "renderScalar:  request to render a width-free-field, "
+                                  <> "without a supplied width limit.")
+        packWi  = T.pack.take wi
+        showDt  = handleStrOverflowFloat wi.renderDiffTime
+        showInt = T.pack.printf "%d"
+        showW64 = T.pack.printf "%d"
 
 renderFieldCentiles :: a p -> (forall v. Divisible v => CDF p v -> [[v]]) -> Field DSelect p a -> [[Text]]
 renderFieldCentiles x cdfProj Field{..} =
@@ -162,29 +162,32 @@ renderFieldCentiles x cdfProj Field{..} =
     DFloat  (cdfProj . ($ x) ->ds) -> ds <&> fmap (formatDouble fWidth)
     DDeltaT (cdfProj . ($ x) ->ds) -> ds <&> fmap (formatDiffTime fWidth)
 
-renderSummary :: forall f a. (a ~ Summary f, TimelineFields a, ToJSON a)
-  => RenderConfig -> Anchor -> (Field ISelect I a -> Bool) -> a -> [Text]
-renderSummary RenderConfig{rcFormat=AsJSON} _ _ x = (:[]) . LT.toStrict $ encodeToLazyText x
-renderSummary rc@RenderConfig{rcFormat=AsLaTeX} a fieldSelr summ =
-  renderAsLaTeX $ renderSummaryProps rc a fieldSelr summ
-renderSummary rc@RenderConfig{rcFormat=AsReport} a fieldSelr summ =
-  renderAsOrg $ renderSummaryProps rc a fieldSelr summ
-renderSummary rc  _ _ _ =
+renderSummaryList :: forall f a. (a ~ Summary f, KnownCDF f, TimelineFields a, FromJSON a, ToJSON a)
+  => RenderConfig -> Anchor -> (forall b. Field ISelect I b -> Bool) -> a -> [SomeSummary] -> [Text]
+renderSummaryList _ _ _ _ [] =
+  error $ "renderSummary: empty list"
+renderSummaryList RenderConfig{rcFormat=AsJSON} _ _ x summs =
+  (:[]) . LT.toStrict . encodeToLazyText $ SomeSummary x : summs
+renderSummaryList rc@RenderConfig{rcFormat=AsLaTeX} a fieldSelr summ summaries@(_:_) =
+  renderAsLaTeX $ renderSummaryProps rc a fieldSelr summ summaries
+renderSummaryList rc@RenderConfig{rcFormat=AsReport} a fieldSelr summ summaries@(_:_) =
+  renderAsOrg $ renderSummaryProps rc a fieldSelr summ summaries
+renderSummaryList rc  _ _ _ _ =
   error $ "renderSummary: RenderConfig not supported:  " <> show rc
 
-renderSummaryProps :: forall f a. (a ~ Summary f, TimelineFields a)
-  => RenderConfig -> Anchor -> (Field ISelect I a -> Bool) -> a -> Table
-renderSummaryProps rc a fieldSelr summ =
+renderSummaryProps :: forall f a. (a ~ Summary f, KnownCDF f, TimelineFields a, FromJSON a, ToJSON a)
+  => RenderConfig -> Anchor -> (Field ISelect I a -> Bool) -> a -> [SomeSummary] -> Table
+renderSummaryProps rc a fieldSelr summ summaries =
   Props
   { oProps = renderAnchorOrgProperties rc a
   , oConstants = []
   , oBody = (:[]) $
     Table
-    { tColHeaders     = ["Value"]
+    { tColHeaders     = ident (sumMeta summ) : [ident sumMeta | SomeSummary Summary{sumMeta} <- summaries]
     , tExtended       = True
     , tApexHeader     = Just "Parameter"
-    , tColumns        = [fields' <&> renderScalarLim (Just 32) summ]
-    , tRowHeaders     = fields' <&> fShortDesc
+    , tColumns        = map mkTColumn $ SomeSummary summ : summaries
+    , tRowHeaders     = map fShortDesc fields'
     , tSummaryHeaders = []
     , tSummaryValues  = []
     , tFormula = []
@@ -193,7 +196,20 @@ renderSummaryProps rc a fieldSelr summ =
   }
  where
    fields' :: [Field ISelect I a]
-   fields' = filter fieldSelr timelineFields
+   fields'  = filter fieldSelr timelineFields
+   ids     :: [Text]
+   ids      = map fId fields'
+   rsl     :: Width -> ISelect I (Summary f') -> Summary f' -> Text
+   rsl      = renderScalarLim $ Just 32
+   mkTColumn :: SomeSummary -> [Text]
+   mkTColumn (SomeSummary (summElem :: Summary f')) =
+     [rsl fWidth fSelect summElem | Field{..} <- fs] where
+       tfs          :: [(Text, Field ISelect I (Summary f'))]
+       tfs           = [(fId tf, tf) | tf <- timelineFields]
+       fs           :: [Field ISelect I (Summary f')]
+       fs            = [lookup' _id | _id <- ids] where
+         lookup' :: Text -> Field ISelect I (Summary f')
+         lookup'  = maybe (error "renderSummaryProps") id . flip lookup tfs
 
 renderProfilingData ::
   RenderConfig -> Anchor -> (ProfileEntry (CDF I) -> Bool) -> ProfilingData (CDF I) -> [Text]
@@ -207,10 +223,10 @@ renderProfilingData rc a flt pd =
     { tColHeaders     = ["time, %", "range", "alloc, %", "source location"]
     , tExtended       = True
     , tApexHeader     = Just "Parameter"
-    , tColumns        = [ fieldsTime   <&> renderScalarLim (Just 6) pd
-                        , fieldsRange  <&> renderScalarLim (Just 6) pd
-                        , fieldsAlloc  <&> renderScalarLim (Just 6) pd
-                        , fieldsSrcLoc <&> renderScalarLim (Just 60) pd
+    , tColumns        = [ [renderScalarLim (Just 6)  fWidth fSelect pd | Field{..} <- fieldsTime]
+                        , [renderScalarLim (Just 6)  fWidth fSelect pd | Field{..} <- fieldsRange]
+                        , [renderScalarLim (Just 6)  fWidth fSelect pd | Field{..} <- fieldsAlloc]
+                        , [renderScalarLim (Just 60) fWidth fSelect pd | Field{..} <- fieldsSrcLoc]
                         ]
     , tRowHeaders     = pes <&> peFunc
     , tSummaryHeaders = []
@@ -269,7 +285,9 @@ renderTimeline fields' commentFn rc a comments xs =
          : concat (fmap (commentFn l) comments))
 
    entry :: a -> Text
-   entry = renderLineDist . renderScalarLim Nothing
+   entry = renderLineDist . rsl where
+     rsl e Field{..} =
+       renderScalarLim Nothing fWidth fSelect e
 
    head1, head2 :: Maybe Text
    head1 =
@@ -287,7 +305,6 @@ renderTimeline fields' commentFn rc a comments xs =
    -- Different strategies: fields are forcefully separated,
    --                       whereas heads can use the extra space
    renderLineHead = mconcat . renderLine' justifyHead fWidth
-   -- renderLineHead = mconcat . renderLine' justifyHead (toEnum.(+ 1).unsafeUnWidth "renderTimeline".fWidth)
    renderLineDist :: (Field ISelect I a -> Text) -> Text
    renderLineDist = T.intercalate " " . renderLine' justifyData fWidth
 

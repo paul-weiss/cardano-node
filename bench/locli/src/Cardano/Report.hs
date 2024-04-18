@@ -275,8 +275,9 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
           }
 
   pure    $ ( titlingText
-            , unlines $ renderSummary renderConfig anchor
-                                  (iFields sumFieldsReport) summ
+            , unlines . renderSummaryList renderConfig anchor
+                             (iFields sumFieldsReport :: Field ISelect I a' -> Bool) summ
+                           $ map fst3 rest
             , unlines . renderAsLaTeX $ mkTable (map head resourceSamples) resourceFields resourceRows
             , unlines . renderAsLaTeX $ mkTable (map head anomalySamples)  anomalyFields  anomalyRows
             , unlines . renderAsLaTeX $ mkTable (map head forgingSamples)  forgingFields  forgingRows

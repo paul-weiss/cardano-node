@@ -762,7 +762,7 @@ runChainCommand s@State{sSummaries = Just (summary:_)} c@(RenderSummary rc@Rende
       dumpText "profiling" bodyProfiling (TextOutputFile $ replaceFileName (unTextOutputFile f) "profiling" System.FilePath.<.> "org")
         & firstExceptT (CommandError c)
   pure s
- where bodySummary = renderSummary rc anchor (iFields sumFieldsReport) summary
+ where bodySummary = renderSummaryList rc anchor (iFields sumFieldsReport) summary []
        anchor = sAnchor s
 runChainCommand _ c@RenderSummary{} = missingCommandData c
   ["run summary"]
@@ -802,7 +802,7 @@ runChainCommand s@State{sMultiSummary=Just summary}
       dumpText "multi-profiling" bodyProfiling (TextOutputFile $ replaceFileName (unTextOutputFile f) "profiling" System.FilePath.<.> "org")
         & firstExceptT (CommandError c)
   pure s
- where body = renderSummary rc anchor (iFields sumFieldsReport) summary
+ where body = renderSummaryList rc anchor (iFields sumFieldsReport) summary []
        anchor = sAnchor s
 runChainCommand _ c@RenderMultiSummary{} = missingCommandData c
   ["multi-run summary"]

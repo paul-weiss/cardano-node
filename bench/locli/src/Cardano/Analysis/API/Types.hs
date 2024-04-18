@@ -9,6 +9,7 @@ module Cardano.Analysis.API.Types (module Cardano.Analysis.API.Types) where
 
 import Cardano.Prelude          hiding (head)
 
+import Data.Aeson ((.=))
 import Data.Text                qualified as T
 import Options.Applicative      qualified as Opt
 
@@ -73,6 +74,8 @@ instance FromJSON SomeSummary where
     (SomeSummary <$> parseJSON @SummaryOne   x)
     <|>
     (SomeSummary <$> parseJSON @MultiSummary x)
+instance ToJSON SomeSummary where
+  toJSON (SomeSummary summ) = object [ "SomeSummary" .= toJSON summ ]
 instance FromJSON SomeBlockProp where
   parseJSON x =
     (SomeBlockProp <$> parseJSON @BlockPropOne   x)
