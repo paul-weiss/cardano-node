@@ -162,6 +162,16 @@ renderFieldCentiles x cdfProj Field{..} =
     DFloat  (cdfProj . ($ x) ->ds) -> ds <&> fmap (formatDouble fWidth)
     DDeltaT (cdfProj . ($ x) ->ds) -> ds <&> fmap (formatDiffTime fWidth)
 
+-- renderSummaryName implements the convention for run names. It glues
+-- the overall node version and the name of the branch together.
+renderSummaryName :: Summary f -> Text
+renderSummaryName Summary {sumMeta=Metadata{..}}
+  | ComponentInfo {ciVersion=Version{unVersion=nodeVersion},..}
+      <- getComponent "cardano-node" manifest
+  = case ciBranch of
+      Nothing                      -> nodeVersion
+      Just Branch{unBranch=branch} -> nodeVersion <> "-" <> branch
+
 renderSummaryList :: forall f a. (a ~ Summary f, KnownCDF f, TimelineFields a, FromJSON a, ToJSON a)
   => RenderConfig -> Anchor -> (forall b. Field ISelect I b -> Bool) -> a -> [SomeSummary] -> [Text]
 renderSummaryList _ _ _ _ [] =
@@ -183,7 +193,8 @@ renderSummaryProps rc a fieldSelr summ summaries =
   , oConstants = []
   , oBody = (:[]) $
     Table
-    { tColHeaders     = ident (sumMeta summ) : [ident sumMeta | SomeSummary Summary{sumMeta} <- summaries]
+    { tColHeaders     = renderSummaryName summ :
+                            [renderSummaryName s | SomeSummary s <- summaries]
     , tExtended       = True
     , tApexHeader     = Just "Parameter"
     , tColumns        = map mkTColumn $ SomeSummary summ : summaries

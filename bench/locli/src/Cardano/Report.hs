@@ -15,6 +15,7 @@ import Cardano.Prelude hiding (head)
 import Data.Aeson.Encode.Pretty qualified as AEP
 import Data.ByteString      qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.List            qualified as L
 import Data.Map.Strict      qualified as Map
 import Data.Text            qualified as T
 import Data.Text.Lazy       qualified as LT
@@ -39,7 +40,7 @@ newtype Tag      = Tag      { unTag      :: Text } deriving newtype (FromJSON, T
 
 data ReportMeta
   = ReportMeta
-    { rmAuthor       :: !Author
+    { rmAuthor       :: ![Author]
     , rmDate         :: !Text
     , rmLocliVersion :: !LocliVersion
     , rmTarget       :: !Version
@@ -54,9 +55,12 @@ instance ToJSON ReportMeta where
     , "tag"        .= rmTag
     ]
 
+-- Multiple authors would be good to detect. For the moment,
+-- it'll just always generate a singleton list.
 getReport :: [Metadata] -> Version -> IO ReportMeta
 getReport metas _ver = do
-  rmAuthor <- getGecosFullUsername
+  rmAuthor <- liftM (:[]) $
+    getGecosFullUsername
               `catch`
               \(_ :: SomeException) ->
                  getFallbackUserId
@@ -234,28 +238,51 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
   let anchor :: Anchor
       anchor =
           Anchor {
-              aRuns = getName summ : map (\(SomeSummary ss, _, _) -> getName ss) rest
+              aRuns = renderSummaryName summ :
+                        [renderSummaryName s | (SomeSummary s, _, _) <- rest]
             , aFilters = ([], [])
             , aSlots = Nothing
             , aBlocks = Nothing
             , aVersion = getLocliVersion
             , aWhen = time
           }
-      -- FIXME: normalise the run names properly
-      getName :: Summary _con -> Text
-      getName Summary {sumMeta=Metadata{..}}
-         = case getComponent "cardano-node" manifest of
-              ComponentInfo {ciVersion=Version{..},..}
-                 -> unVersion <> maybe "" (("-"<>) . unBranch) ciBranch
-      -- FIXME: Authors should have "\\and" interspersed between them in LaTeX.
-      --        As ReportMeta now stands, rmAuthor understands just one author.
-      --        Plutus vs. Value workloads need to be distinguished, too.
+      -- FIXME: Plutus workloads need to be able to be distinguished from
+      --        Value workloads.
+      workloadName :: Text
+      workloadName   | False     = "Plutus Workload"
+                     | otherwise = "Value Workload"
+
+      reportTypeName :: Text
+      reportTypeName | null rest = "Benchmark"
+                     | otherwise = "Comparison"
+
+      -- titleName generates the title for the document as a whole.
+      -- It tries to respond like reportTypeName to the nullity or
+      -- otherwise of the list of secondary runs. Some of that involves
+      -- phrasing, so there is some strangeness with the conjunction only
+      -- being used before the final list element, while the earlier
+      -- list elements are separated by commas.
+      titleName :: Text
+      titleName = case aRuns anchor of
+        [] -> error "titleName in generate': no runs to compare"
+        [single]        ->
+          reportTypeName <> " of " <> single <> " in " <> workloadName
+        base : comp@(_:_) -> workloadName <> " " <> reportTypeName <> " of "
+          <> base <> " against "
+          <> case L.reverse comp of
+               [] -> error "titleName in generate': no secondary runs"
+               [onlyComp] -> onlyComp
+               lastComp : restComp@(_:_) -> T.concat . L.reverse
+                 $ ("and " <> lastComp) : map (<> ", ") restComp
+
+      titlingText :: Text
       titlingText = unlines
         . map latexFixup
-        $ [ "\\def\\locliauthor{" <> unAuthor (rmAuthor ctx) <> "}"
-          , "\\def\\loclititle{Value Workload for " <> unTag (rmTag ctx) <> "}"
+        $ [ "\\def\\locliauthor{" <> T.intercalate " \\\\and " authorList <> "}"
+          , "\\def\\loclititle{" <> titleName <> "}"
           , "\\def\\loclidate{" <> rmDate ctx <> "}"
-          ]
+          ] where
+        authorList = map unAuthor $ rmAuthor ctx
       mkTable :: [Int] -> [Field select con functor] -> [[Double]] -> Table
       mkTable sizes fields rows
         = Table {
