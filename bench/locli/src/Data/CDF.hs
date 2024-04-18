@@ -155,10 +155,49 @@ instance Divisible NominalDiffTime where
 
 deriving newtype instance Divisible RUTCTime
 
+-- Sample counts are summed as integers before conversion to floating point.
+-- Kahan summation mitigates the accumulation of round-off error.
+data WAState b =
+  WAState {
+    waSamplesLeft    :: [(Int, b)]
+  , waAccumulatedSum :: b
+  , waCompensation   :: b
+  } deriving (Eq, Read, Show, Foldable, Generic, FromJSON, ToJSON)
+
+kahanSum :: Divisible b => State (WAState b) b
+kahanSum = do
+  WAState {..} <- get
+  case waSamplesLeft of
+    []                -> pure waAccumulatedSum
+    ((n, x):waSamplesLeft') ->
+      let (waAccumulatedSum', waCompensation') =
+             (fromIntegral n * x) `fast2sum` waAccumulatedSum
+        in do put $ WAState {
+                      waSamplesLeft    = waSamplesLeft'
+                    , waAccumulatedSum = waAccumulatedSum'
+                    , waCompensation   = waCompensation'
+                    }
+              kahanSum
+
 weightedAverage :: forall b. (Divisible b) => [(Int, b)] -> b
 weightedAverage xs =
-  (`divide` (fromIntegral . sum $ fst <$> xs)) . sum $
-  xs <&> \(size, avg) -> fromIntegral size * avg
+  evalState kahanSum initWAState
+    `divide` (fromIntegral . sum $ map fst xs)
+  where
+    initWAState =
+      WAState {
+        waSamplesLeft    = xs
+      , waAccumulatedSum = 0
+      , waCompensation   = 0
+      }
+
+fast2sum :: Divisible b => b -> b -> (b, b)
+fast2sum x y = (s, delta_x + delta_y) where
+  delta_x = x - x'
+  delta_y = y - y'
+  x'      = s - y
+  y'      = s - x
+  s       = x + y
 
 averageDouble :: Divisible a => [a] -> Double
 averageDouble xs = toDouble (sum xs) / fromIntegral (length xs)
