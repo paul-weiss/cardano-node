@@ -267,11 +267,10 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
           ,  tExtended       = False
           ,  tApexHeader     = Nothing
           ,  tRowHeaders     = map fShortDesc fields
-          ,  tSummaryHeaders = []
-          ,  tSummaryValues  = []
+          ,  tSummaryHeaders = ["Sample count"]
+          ,  tSummaryValues  = [[formatInt W4 sz] | sz <- sizes]
           ,  tFormula        = []
-          -- FIXME: This doesn't match the EDE output.
-          ,  tConstants      = [("nSamples", formatInt W4 $ head sizes)]
+          ,  tConstants      = []
           }
 
   pure    $ ( titlingText

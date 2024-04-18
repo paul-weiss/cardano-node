@@ -3,6 +3,7 @@
 module Cardano.Table (module Cardano.Table) where
 
 import Cardano.Prelude
+import Data.List                qualified as L
 import Data.Text                qualified as T
 
 import Cardano.Util
@@ -51,7 +52,32 @@ renderAsLaTeX Table{..} =
   [ "\\end{tabular}" ] where
   headerSet = "" : tColHeaders
   rowSet = transpose $ tRowHeaders : tColumns
-  summarySet = transpose $ tSummaryHeaders : tSummaryValues
+  -- A. subtract one for base version only -- row titles are not included
+  -- B. divide by 3 to get the number of versions compared against
+  --        These versions get padded with \Delta and \Delta% columns.
+  -- C. add back 1 for the base version
+  -- The inner difference is never negative because of the row headers and baseline.
+  -- We should have nVersions == length tSummaryValues
+  nVersions  = ((length tColHeaders - 1) `div` 3) + 1
+  nVersions' = ((length tColumns - 1) `div` 3) + 1
+  expandSummaryColumns  :: [Text] -> [[Text]]
+  expandSummaryColumns v = [x, y, z] where
+    (x, y, z) = L.unzip3 $ [("(" <> s <> ">)", "", "") | s <- v]
+  summarySet = case tSummaryValues of
+    base:comp@(_:_) | nVersions == length tSummaryValues && nVersions == nVersions' ->
+        transpose   $ tSummaryHeaders
+                    : ["(" <> b <> ">)" | b :: Text <- base]
+                    : concatMap expandSummaryColumns comp
+                    | length tSummaryValues /= 0 || nVersions /= nVersions' ->
+        error . L.unlines $ [ "renderAsLaTeX: summary value mismatch"
+                            , "nVersions = " ++ show nVersions
+                            , "nVersions' = " ++ show nVersions'
+                            , "length tSummaryValues = " ++ show (length tSummaryValues)
+                            , "length tColHeaders = " ++ show (length tColHeaders)
+                            , "length tColumns = " ++ show (length tColumns)
+                            ]
+    _:_   -> transpose $ tSummaryHeaders : tSummaryValues
+    _ -> []
 
 latexFixup :: Text -> Text
 latexFixup = T.replace "%" "\\%"
