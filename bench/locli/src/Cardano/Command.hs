@@ -818,7 +818,7 @@ runChainCommand s c@(Compare (InputDir dir) mTmpl outf@(TextOutputFile outfp) ru
   case (takeFileName dir, xs) of
     ("latex", baseline:deltas@(_:_)) -> liftIO $ do
       (titling, summary, resource, anomaly, forging, peers)
-        <- Cardano.Report.generate' baseline deltas
+        <- Cardano.Report.generateLaTeX baseline deltas
       let writef (fp, txt) = do
                withFile (outdir </> fp) WriteMode $
                       \hnd -> T.hPutStrLn hnd txt

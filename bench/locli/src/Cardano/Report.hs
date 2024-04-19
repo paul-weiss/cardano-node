@@ -227,11 +227,11 @@ instance ToJSON TmplSection where
                                               ("angles", angles)]))
     ]
 
-generate' :: (SomeSummary, ClusterPerf, SomeBlockProp)
+generateLaTeX :: (SomeSummary, ClusterPerf, SomeBlockProp)
           -> [(SomeSummary, ClusterPerf, SomeBlockProp)]
           -- The result tuple is: summary, resource, anomaly, forging, peers
           -> IO (Text, Text, Text, Text, Text, Text)
-generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
+generateLaTeX (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (bp :: BlockProp bpt)) rest = do
   ctx <- getReport metas . ciVersion . getComponent "cardano-node"
                                      . trManifest $ last restTmpls
   time <- getCurrentTime
@@ -264,13 +264,13 @@ generate' (SomeSummary (summ :: Summary f), cp :: MachPerf cpt, SomeBlockProp (b
       -- list elements are separated by commas.
       titleName :: Text
       titleName = case aRuns anchor of
-        [] -> error "titleName in generate': no runs to compare"
+        [] -> error "titleName in generateLaTeX: no runs to compare"
         [single]        ->
           reportTypeName <> " of " <> single <> " in " <> workloadName
         base : comp@(_:_) -> workloadName <> " " <> reportTypeName <> " of "
           <> base <> " against "
           <> case L.reverse comp of
-               [] -> error "titleName in generate': no secondary runs"
+               [] -> error "titleName in generateLaTeX: no secondary runs"
                [onlyComp] -> onlyComp
                lastComp : restComp@(_:_) -> T.concat . L.reverse
                  $ ("and " <> lastComp) : map (<> ", ") restComp
