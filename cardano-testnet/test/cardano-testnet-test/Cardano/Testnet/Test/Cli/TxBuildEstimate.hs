@@ -25,7 +25,9 @@ import           Prelude
 
 import           Control.Monad (void)
 import qualified Data.Map.Strict as Map
+import           Data.Text (Text)
 import qualified Data.Text as Text
+import           GHC.Stack
 import           Lens.Micro
 import           System.FilePath ((</>))
 import qualified System.Info as SYS
@@ -36,6 +38,7 @@ import qualified Testnet.Process.Run as H
 import           Testnet.Process.Run
 import qualified Testnet.Property.Utils as H
 import           Testnet.Runtime
+import           Testnet.Start.Types
 
 import           Hedgehog (Property)
 import qualified Hedgehog as H
@@ -89,6 +92,22 @@ hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsB
   void $ H.execCli' execConfig
     [ "babbage", "query", "protocol-parameters", "--out-file", pparamsFp ]
 
+  wallet0KeyHash <- Text.pack . filter (/= '\n') <$> H.execCli' execConfig
+                [ "address", "key-hash"
+                , "--payment-verification-key-file", paymentVKey $ paymentKeyInfoPair wallet0
+                ]
+
+  simpleScript <- H.note $ work </> "simple.script"
+  H.writeFile simpleScript $ Text.unpack $ exampleSimpleScript wallet0KeyHash
+
+  mintingPolicyId <- filter (/= '\n') <$>
+    H.execCli' execConfig
+      [ anyEraToString anyEra, "transaction"
+      , "policyid"
+      , "--script-file", simpleScript
+      ]
+  let assetName = "6E6F64657465616D"
+      mintValue = mconcat ["5 ", mintingPolicyId, ".", assetName]
 
   void $ execCli' execConfig
       [ "babbage", "transaction", "build-estimate"
@@ -97,6 +116,8 @@ hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsB
       , "--total-utxo-value", onlyAda
       , "--tx-in", Text.unpack $ renderTxIn txin1
       , "--change-address", Text.unpack $ paymentKeyInfoAddr wallet0
+      , "--mint", mintValue
+      , "--mint-script-file", simpleScript
       , "--tx-out", Text.unpack (paymentKeyInfoAddr wallet0) <> "+" <> show @Int 5_000_001
       , "--out-file", txbodyFp
       ]
@@ -108,8 +129,8 @@ hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsB
   -- This is the current calculated fee.
   -- It's a sanity check to see if anything has
   -- changed regarding fee calculation.
-
-  228 H.=== txFee
+  -- Without the multi-asset value the fee is 228.
+  349 H.=== txFee
 
   void $ execCli' execConfig
     [ "babbage", "transaction", "sign"
@@ -123,6 +144,58 @@ hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsB
     [ "transaction", "submit"
     , "--tx-file", txbodySignedFp
     ]
+
+  H.threadDelay 5_000_000
+
+  -- Test with MAs in the UTxO
+  txin2 <- findLargestUtxoForPaymentKey epochStateView sbe wallet0
+  utxos2 <- findUtxosWithAddress epochStateView sbe (paymentKeyInfoAddr wallet0)
+
+  txbodyFp2 <- H.note $ work </> "tx-ma-utxo.body"
+  txbodySignedFp2 <- H.note $ work </> "tx-ma-utxo.body.signed"
+  onlyAda2 <-
+    case Map.lookup txin2 utxos2 of
+      Nothing -> H.failMessage callStack $ "Tx input not found: " <> Text.unpack (renderTxIn txin2)
+      Just txout -> return . show @Integer . L.unCoin . txOutValueLovelace $  txOutValue txout
+  let outputWithSingleMa = mconcat [ Text.unpack (paymentKeyInfoAddr wallet0)
+                                   , "+", show @Int 1_034_400
+                                   , "+", mintValue
+                                   ]
+  void $ execCli' execConfig
+      [ "babbage", "transaction", "build-estimate"
+      , "--shelley-key-witnesses", show @Int 1
+      , "--protocol-params-file", pparamsFp
+      , "--total-utxo-value", mconcat [onlyAda2, "+", mintValue]
+      , "--tx-in", Text.unpack $ renderTxIn txin2
+      , "--change-address", Text.unpack $ paymentKeyInfoAddr wallet0
+      , "--tx-out", outputWithSingleMa
+      , "--out-file", txbodyFp2
+      ]
+
+
+  cddlUnwitnessedTx2 <- H.readJsonFileOk txbodyFp2
+  apiTx2 <- H.evalEither $ deserialiseTxLedgerCddl sbe cddlUnwitnessedTx2
+  let txFee2 = L.unCoin $ H.extractTxFee apiTx2
+
+  -- This is the current calculated fee.
+  -- It's a sanity check to see if anything has
+  -- changed regarding fee calculation.
+  -- Without the multi-asset value the fee is 228.
+  272 H.=== txFee2
+
+  void $ execCli' execConfig
+    [ "babbage", "transaction", "sign"
+    , "--tx-body-file", txbodyFp2
+    , "--signing-key-file", paymentSKey $ paymentKeyInfoPair wallet0
+    , "--out-file", txbodySignedFp2
+    ]
+
+
+  void $ execCli' execConfig
+    [ "transaction", "submit"
+    , "--tx-file", txbodySignedFp2
+    ]
+
   H.success
 
 
@@ -133,3 +206,11 @@ txOutValueLovelace ::TxOutValue era -> L.Coin
 txOutValueLovelace = \case
   TxOutValueShelleyBased sbe v -> v ^. L.adaAssetL sbe
   TxOutValueByron v -> v
+
+exampleSimpleScript :: Text -> Text
+exampleSimpleScript requiredSignerKeyHash =
+  Text.unlines ["{"
+               , "\"keyHash\": " <> "\"" <> requiredSignerKeyHash <> "\""
+               , ",\"type\": \"sig\""
+               , "}"
+               ]
