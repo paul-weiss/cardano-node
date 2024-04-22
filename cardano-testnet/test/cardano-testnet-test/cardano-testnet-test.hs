@@ -13,6 +13,7 @@ import qualified Cardano.Testnet.Test.Cli.Conway.Plutus
 import qualified Cardano.Testnet.Test.Cli.KesPeriodInfo
 import qualified Cardano.Testnet.Test.Cli.Queries
 import qualified Cardano.Testnet.Test.Cli.QuerySlotNumber
+import qualified Cardano.Testnet.Test.Cli.TxBuildEstimate
 import qualified Cardano.Testnet.Test.FoldBlocks
 import qualified Cardano.Testnet.Test.LedgerEvents.Gov.DRepDeposits
 import qualified Cardano.Testnet.Test.LedgerEvents.Gov.ProposeNewConstitution
@@ -80,6 +81,11 @@ tests = do
           , H.ignoreOnWindows "CliQueries" Cardano.Testnet.Test.Cli.Queries.hprop_cli_queries
           ]
         ]
+
+    , T.testGroup "Transaction"
+        [ H.ignoreOnWindows "tx-build-estimate" Cardano.Testnet.Test.Cli.TxBuildEstimate.hprop_tx_build_estimate
+        ]
+
     , T.testGroup "SubmitApi"
         [ T.testGroup "Babbage"
             [ H.ignoreOnWindows "transaction" Cardano.Testnet.Test.SubmitApi.Babbage.Transaction.hprop_transaction

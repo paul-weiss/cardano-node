@@ -35,7 +35,7 @@ library
                       , aeson-pretty
                       , ansi-terminal
                       , bytestring
-                      , cardano-api ^>= 8.44
+                      , cardano-api ^>= 8.45
                       , cardano-cli ^>= 8.22
                       , cardano-crypto-class
                       , cardano-crypto-wrapper
@@ -182,6 +182,7 @@ test-suite cardano-testnet-test
                         Cardano.Testnet.Test.Cli.KesPeriodInfo
                         Cardano.Testnet.Test.Cli.Queries
                         Cardano.Testnet.Test.Cli.QuerySlotNumber
+                        Cardano.Testnet.Test.Cli.TxBuildEstimate
                         Cardano.Testnet.Test.FoldBlocks
                         Cardano.Testnet.Test.Misc
 
