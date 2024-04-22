@@ -89,7 +89,7 @@ hprop_transaction = H.integrationRetryWorkspace 0 "babbage-transaction" $ \tempA
     ]
   cddlUnwitnessedTx <- H.readJsonFileOk txbodyFp
   apiTx <- H.evalEither $ deserialiseTxLedgerCddl sbe cddlUnwitnessedTx
-  let txFee = L.unCoin $ extractTxFee apiTx
+  let txFee = L.unCoin $ H.extractTxFee apiTx
 
   -- This is the current calculated fee.
   -- It's a sanity check to see if anything has
@@ -130,7 +130,3 @@ txOutValueLovelace ::TxOutValue era -> L.Coin
 txOutValueLovelace = \case
   TxOutValueShelleyBased sbe v -> v ^. A.adaAssetL sbe
   TxOutValueByron v -> v
-
-extractTxFee :: Tx era -> L.Coin
-extractTxFee (ShelleyTx sbe ledgerTx) =
-  shelleyBasedEraConstraints sbe $ ledgerTx ^. (L.bodyTxL . L.feeTxBodyL)

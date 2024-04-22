@@ -42,7 +42,6 @@ import qualified Hedgehog as H
 import qualified Hedgehog.Extras as H
 import qualified Hedgehog.Extras.Stock.IO.Network.Sprocket as IO
 
-
 hprop_tx_build_estimate :: Property
 hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
   H.note_ SYS.os
@@ -101,6 +100,16 @@ hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsB
       , "--tx-out", Text.unpack (paymentKeyInfoAddr wallet0) <> "+" <> show @Int 5_000_001
       , "--out-file", txbodyFp
       ]
+
+  cddlUnwitnessedTx <- H.readJsonFileOk txbodyFp
+  apiTx <- H.evalEither $ deserialiseTxLedgerCddl sbe cddlUnwitnessedTx
+  let txFee = L.unCoin $ H.extractTxFee apiTx
+
+  -- This is the current calculated fee.
+  -- It's a sanity check to see if anything has
+  -- changed regarding fee calculation.
+
+  228 H.=== txFee
 
   void $ execCli' execConfig
     [ "babbage", "transaction", "sign"

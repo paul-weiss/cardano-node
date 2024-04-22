@@ -19,13 +19,17 @@ module Testnet.Property.Utils
   , getShelleyGenesisHash
 
   , decodeEraUTxO
+  , extractTxFee
   ) where
 
 import           Cardano.Api
+import qualified Cardano.Api.Ledger as L
+import           Cardano.Api.Shelley
 
 import           Cardano.Chain.Genesis (GenesisHash (unGenesisHash), readGenesisData)
 import qualified Cardano.Crypto.Hash.Blake2b as Crypto
 import qualified Cardano.Crypto.Hash.Class as Crypto
+import qualified Cardano.Ledger.Core as L
 
 import           Control.Exception.Safe (MonadCatch)
 import           Control.Monad
@@ -39,6 +43,7 @@ import           Data.Text (Text)
 import           Data.Word
 import           GHC.Stack
 import qualified GHC.Stack as GHC
+import           Lens.Micro
 import           Options.Applicative
 import qualified System.Environment as IO
 import           System.Info (os)
@@ -123,3 +128,6 @@ runInBackground act = void . H.evalM $ allocate (H.async act) cleanUp
 decodeEraUTxO :: (IsShelleyBasedEra era, MonadTest m) => ShelleyBasedEra era -> Aeson.Value -> m (UTxO era)
 decodeEraUTxO _ = H.jsonErrorFail . Aeson.fromJSON
 
+extractTxFee :: Tx era -> L.Coin
+extractTxFee (ShelleyTx sbe ledgerTx) =
+  shelleyBasedEraConstraints sbe $ ledgerTx ^. (L.bodyTxL . L.feeTxBodyL)
