@@ -62,7 +62,7 @@ package plutus-scripts-bench
 source-repository-package
     type: git
     location: https://github.com/IntersectMBO/cardano-cli.git
-    tag: 184b0056498eaa9828e9076cb8e3c19bba337002
+    tag: edf7190f560d4772d4bea7b8fcc8cb5101a6e0b2
     subdir: cardano-cli
 
 source-repository-package
