@@ -34,6 +34,7 @@ import qualified System.Info as SYS
 
 import           Testnet.Components.Query
 import           Testnet.Components.TestWatchdog
+import           Testnet.Defaults
 import qualified Testnet.Process.Run as H
 import           Testnet.Process.Run
 import qualified Testnet.Property.Utils as H
@@ -90,34 +91,37 @@ hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsB
   let -- TODO: Test with a multi-asset in the UTxO
       onlyAda = show @Integer $ sum $ map (L.unCoin . txOutValueLovelace . txOutValue) $ Map.elems utxos
   void $ H.execCli' execConfig
-    [ "babbage", "query", "protocol-parameters", "--out-file", pparamsFp ]
+    [ eraToString era, "query", "protocol-parameters", "--out-file", pparamsFp ]
 
   wallet0KeyHash <- Text.pack . filter (/= '\n') <$> H.execCli' execConfig
                 [ "address", "key-hash"
                 , "--payment-verification-key-file", paymentVKey $ paymentKeyInfoPair wallet0
                 ]
 
-  simpleScript <- H.note $ work </> "simple.script"
-  H.writeFile simpleScript $ Text.unpack $ exampleSimpleScript wallet0KeyHash
+  plutusMintingScript <- H.note $ work </> "always-succeeds-non-spending-script.plutusV3"
+  H.writeFile plutusMintingScript $ Text.unpack plutusV3NonSpendingScript
 
   mintingPolicyId <- filter (/= '\n') <$>
     H.execCli' execConfig
       [ anyEraToString anyEra, "transaction"
       , "policyid"
-      , "--script-file", simpleScript
+      , "--script-file", plutusMintingScript
       ]
   let assetName = "6E6F64657465616D"
       mintValue = mconcat ["5 ", mintingPolicyId, ".", assetName]
 
   void $ execCli' execConfig
-      [ "babbage", "transaction", "build-estimate"
+      [ eraToString era, "transaction", "build-estimate"
       , "--shelley-key-witnesses", show @Int 1
       , "--protocol-params-file", pparamsFp
       , "--total-utxo-value", onlyAda
       , "--tx-in", Text.unpack $ renderTxIn txin1
+      , "--tx-in-collateral", Text.unpack $ renderTxIn txin1
       , "--change-address", Text.unpack $ paymentKeyInfoAddr wallet0
       , "--mint", mintValue
-      , "--mint-script-file", simpleScript
+      , "--mint-script-file", plutusMintingScript
+      , "--mint-redeemer-value", "0"
+      , "--mint-execution-units", "(2000000,20000000)"
       , "--tx-out", Text.unpack (paymentKeyInfoAddr wallet0) <> "+" <> show @Int 5_000_001
       , "--out-file", txbodyFp
       ]
@@ -129,11 +133,10 @@ hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsB
   -- This is the current calculated fee.
   -- It's a sanity check to see if anything has
   -- changed regarding fee calculation.
-  -- Without the multi-asset value the fee is 228.
-  349 H.=== txFee
+  1154623 H.=== txFee
 
   void $ execCli' execConfig
-    [ "babbage", "transaction", "sign"
+    [ eraToString era, "transaction", "sign"
     , "--tx-body-file", txbodyFp
     , "--signing-key-file", paymentSKey $ paymentKeyInfoPair wallet0
     , "--out-file", txbodySignedFp
@@ -162,7 +165,7 @@ hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsB
                                    , "+", mintValue
                                    ]
   void $ execCli' execConfig
-      [ "babbage", "transaction", "build-estimate"
+      [ eraToString era, "transaction", "build-estimate"
       , "--shelley-key-witnesses", show @Int 1
       , "--protocol-params-file", pparamsFp
       , "--total-utxo-value", mconcat [onlyAda2, "+", mintValue]
@@ -181,10 +184,10 @@ hprop_tx_build_estimate = H.integrationWorkspace "tx-build-estimate" $ \tempAbsB
   -- It's a sanity check to see if anything has
   -- changed regarding fee calculation.
   -- Without the multi-asset value the fee is 228.
-  272 H.=== txFee2
+  278 H.=== txFee2
 
   void $ execCli' execConfig
-    [ "babbage", "transaction", "sign"
+    [ eraToString era, "transaction", "sign"
     , "--tx-body-file", txbodyFp2
     , "--signing-key-file", paymentSKey $ paymentKeyInfoPair wallet0
     , "--out-file", txbodySignedFp2

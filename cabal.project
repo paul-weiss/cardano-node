@@ -62,13 +62,13 @@ package plutus-scripts-bench
 source-repository-package
     type: git
     location: https://github.com/IntersectMBO/cardano-cli.git
-    tag: edf7190f560d4772d4bea7b8fcc8cb5101a6e0b2
+    tag: b43bdbe89d806023705092ae9aa0256852d8f99f
     subdir: cardano-cli
 
 source-repository-package
     type: git
     location: https://github.com/IntersectMBO/cardano-api.git
-    tag: 32046504555191cac6c4106f89d62e64f48f46f0
+    tag: c3abf88c573beea52ef4dfe8b68be95593cfbe48
     subdir: cardano-api
 
 allow-newer: ouroboros-consensus-diffusion
