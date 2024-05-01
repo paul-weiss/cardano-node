@@ -142,6 +142,7 @@ library
                       , strict-stm
                       , cardano-ledger-shelley
                       , prettyprinter
+                      , scientific
                       , stm
                       , text
                       , time
