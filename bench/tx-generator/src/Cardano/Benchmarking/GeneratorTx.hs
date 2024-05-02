@@ -109,17 +109,9 @@ handleTxSubmissionClientError
     resolveSeed <- makeResolvSeed defaultResolvConf
     _errorOrName :: Either DNSError [Domain]
                 <- withResolver resolveSeed \resolver ->
-                     let leftFunc :: FilePath -> IO DNSError
-                         leftFunc  = pure . mkUnixError
-                         rightFunc :: Domain -> IO (Either DNSError [Domain])
-                         rightFunc  = lookupRDNS resolver
-                         leftRightFunc :: Either FilePath Domain -> Either (IO DNSError) (IO (Either DNSError [Domain]))
-                         leftRightFunc = leftFunc +++ rightFunc
-                         leftRightFunc' :: Either FilePath Domain -> IO (Either DNSError (Either DNSError [Domain]))
-                         leftRightFunc' = uncozipL . leftRightFunc
-                         leftRightFunc'' :: Either FilePath Domain -> IO (Either DNSError [Domain])
-                         leftRightFunc'' = liftM join . leftRightFunc'
-                      in leftRightFunc'' $ addrInfoToName remoteAddr
+                      liftM join . uncozipL .
+                          (pure . mkUnixError +++ lookupRDNS resolver) $
+                                  addrInfoToName remoteAddr
     submitThreadReport reportRef (Left errDesc)
     case errorPolicy of
       FailOnError -> throwIO err
