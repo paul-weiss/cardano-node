@@ -44,6 +44,7 @@ import qualified Data.List as List (intercalate, unlines)
 import qualified Data.List.NonEmpty as NE
 import           Data.Text (pack)
 import qualified Data.Time.Clock as Clock
+import           GHC.Conc (labelThread)
 import           GHC.IO.Exception (IOErrorType (..), IOException (..))
 import           Network.DNS (DNSError (DecodeError), Domain, defaultResolvConf, lookupRDNS,
                    makeResolvSeed, withResolver)
@@ -93,6 +94,10 @@ addrInfoToName AddrInfo {..} =
     showHex' 0 = ""
     showHex' n = showHex n ""
 
+mkUnixError :: String -> DNSError
+mkUnixError path =
+      DecodeError $ "Unix domain socket passed to reverse DNS: " ++ path
+
 handleTxSubmissionClientError ::
      Trace IO (TraceBenchTxSubmit TxId)
   -> Network.Socket.AddrInfo
@@ -127,9 +132,6 @@ handleTxSubmissionClientError
           LogErrors   -> traceWith traceSubmit $
             TraceBenchTxSubError (pack errDesc)
    where
-    mkUnixError :: String -> DNSError
-    mkUnixError path =
-      DecodeError $ "Unix domain socket passed to reverse DNS: " ++ path
     mkDNSErr :: DNSError -> IO IOException
     mkDNSErr dnsError = do
          let ioe_description = List.unlines $
@@ -193,13 +195,26 @@ walletBenchmark
   txStreamRef <- newMVar $ StreamActive txSource
   allAsyncs <- forM (zip reportRefs $ NE.toList remoteAddresses) $
     \(reportRef, remoteAddr) -> do
+      resolveSeed <- makeResolvSeed defaultResolvConf
+      errorOrName <- withResolver resolveSeed \resolver ->
+                        liftM join . uncozipL .
+                            (pure . mkUnixError +++ lookupRDNS resolver) $
+                                    addrInfoToName remoteAddr
       let errorHandler = handleTxSubmissionClientError traceSubmit remoteAddr reportRef errorPolicy
           client = txSubmissionClient
                      traceN2N
                      traceSubmit
                      (txStreamSource txStreamRef tpsThrottle)
                      (submitSubmissionThreadStats reportRef)
-      async $ handle errorHandler (connectClient remoteAddr client)
+          remoteAddrString = show $ addrAddress remoteAddr
+          serviceTargets | Right names@(_:_) <- errorOrName
+                         = List.intercalate ", " $ map BS.unpack names
+                         | otherwise = remoteAddrString
+      asyncThread <- async $ handle errorHandler (connectClient remoteAddr client)
+      let tid = asyncThreadId asyncThread
+      labelThread tid $ "txSubmissionClient " ++ show tid ++
+                            " servicing " ++ serviceTargets
+      pure asyncThread
 
   tpsThrottleThread <- async $ do
     startSending tpsThrottle
