@@ -107,26 +107,36 @@ handleTxSubmissionClientError
   errorPolicy
   (SomeException err) = do
     resolveSeed <- makeResolvSeed defaultResolvConf
-    _errorOrName :: Either DNSError [Domain]
-                <- withResolver resolveSeed \resolver ->
+    errorOrName <- withResolver resolveSeed \resolver ->
                       liftM join . uncozipL .
                           (pure . mkUnixError +++ lookupRDNS resolver) $
                                   addrInfoToName remoteAddr
-    submitThreadReport reportRef (Left errDesc)
-    case errorPolicy of
-      FailOnError -> throwIO err
-      LogErrors   -> traceWith traceSubmit $
-        TraceBenchTxSubError (pack errDesc)
+    case errorOrName of
+      Left  dnsErr     -> throw =<< mkDNSErr dnsErr
+      Right []         -> do
+        let errDesc = mconcat
+              [ "Exception while talking to peer "
+              , "<<< IP unresolved >>>"
+              , " (", show (addrAddress remoteAddr), "): "
+              , show err]
+        submitThreadReport reportRef (Left errDesc)
+      Right name@(_:_) -> do
+        let errDesc = mconcat
+              [ "Exception while talking to peer "
+              , List.intercalate ", " $ map BS.unpack name
+              , " (", show (addrAddress remoteAddr), "): "
+              , show err]
+        submitThreadReport reportRef (Left errDesc)
+        case errorPolicy of
+          FailOnError -> throwIO err
+          LogErrors   -> traceWith traceSubmit $
+            TraceBenchTxSubError (pack errDesc)
    where
     mkUnixError :: String -> DNSError
     mkUnixError path =
       DecodeError $ "Unix domain socket passed to reverse DNS: " ++ path
-    errDesc = mconcat
-      [ "Exception while talking to peer "
-      , " (", show (addrAddress remoteAddr), "): "
-      , show err]
-    _mkDNSErr :: DNSError -> IO IOException
-    _mkDNSErr dnsError = do
+    mkDNSErr :: DNSError -> IO IOException
+    mkDNSErr dnsError = do
          let ioe_description = List.unlines $
                [ List.intercalate " " $
                    [ "Encountered Unix domain socket attempting to resolve"
@@ -142,8 +152,6 @@ handleTxSubmissionClientError
                        , ioe_filename = Just "GeneratorTx.hs"
                        , ioe_location = "handleTxSubmissionClientError"
                        , .. }
-      -- Right               [] -> error "rightSide empty"
-      -- Right _rightSide@(_:_) -> error "rightSide non-empty"
 
 walletBenchmark :: forall era. IsShelleyBasedEra era
   => Trace IO (TraceBenchTxSubmit TxId)
