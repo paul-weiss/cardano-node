@@ -93,6 +93,7 @@ library
   autogen-modules:      Paths_tx_generator
 
   build-depends:        base >=4.12 && <5
+                      , adjunctions
                       , aeson
                       , aeson-pretty
                       , async
@@ -118,6 +119,7 @@ library
                       , containers
                       , constraints-extras
                       , dlist
+                      , dns
                       , extra
                       , formatting
                       , generic-monoid
@@ -144,6 +146,7 @@ library
                       , prettyprinter
                       , scientific
                       , stm
+                      , template-haskell
                       , text
                       , time
                       , trace-dispatcher
