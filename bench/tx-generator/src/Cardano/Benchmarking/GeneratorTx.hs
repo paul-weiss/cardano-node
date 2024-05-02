@@ -113,18 +113,13 @@ handleTxSubmissionClientError
                                   addrInfoToName remoteAddr
     case errorOrName of
       Left  dnsErr     -> throw =<< mkDNSErr dnsErr
-      Right []         -> do
+      Right maybeNames -> do
         let errDesc = mconcat
               [ "Exception while talking to peer "
-              , "<<< IP unresolved >>>"
-              , " (", show (addrAddress remoteAddr), "): "
-              , show err]
-        submitThreadReport reportRef (Left errDesc)
-      Right name@(_:_) -> do
-        let errDesc = mconcat
-              [ "Exception while talking to peer "
-              , List.intercalate ", " $ map BS.unpack name
-              , " (", show (addrAddress remoteAddr), "): "
+              , case maybeNames of
+                  []         -> "<<< IP unresolved >>>"
+                  name@(_:_) -> List.intercalate ", " $ map BS.unpack name
+              , " (", show $ addrAddress remoteAddr, "): "
               , show err]
         submitThreadReport reportRef (Left errDesc)
         case errorPolicy of
