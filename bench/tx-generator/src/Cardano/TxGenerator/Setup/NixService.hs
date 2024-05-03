@@ -7,9 +7,16 @@
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
+-- TODO: remove me
+{-# OPTIONS_GHC -fno-warn-unused-imports #-}
+
+
 module Cardano.TxGenerator.Setup.NixService
        ( NixServiceOptions (..)
-       , NodeConfigDiffTime (..)
+       --, NodeConfigDiffTime (..)
+       , WithAlias(..)
+       , getKeepaliveTimeout
+       , getAliasPayload
        , getNodeConfigFile
        , setNodeConfigFile
        , txGenTxParams
@@ -28,9 +35,8 @@ import           Cardano.TxGenerator.Internal.Orphans ()
 import           Cardano.TxGenerator.Types
 
 import qualified Control.Applicative as App (empty)
-import           Data.Aeson (FromJSON (..), Options (fieldLabelModifier), ToJSON (..),
-                   Value (Number), (.:), (.:?))
-import qualified Data.Aeson as Aeson (Options, defaultOptions, genericParseJSON, withObject)
+import           Data.Aeson as Aeson
+-- import qualified Data.Aeson as Aeson (Options, defaultOptions, genericParseJSON, withObject)
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Maybe (fromMaybe)
 import           Data.Scientific (Scientific)
@@ -50,16 +56,17 @@ data NixServiceOptions = NixServiceOptions {
   , _nix_init_cooldown    :: Double
   , _nix_era              :: AnyCardanoEra
   , _nix_plutus           :: Maybe TxGenPlutusParams
-  , _nix_keepalive        :: Maybe NodeConfigDiffTime
+  , _nix_keepalive        :: Maybe Integer
   , _nix_nodeConfigFile       :: Maybe FilePath
   , _nix_cardanoTracerSocket  :: Maybe FilePath
   , _nix_sigKey               :: SigningKeyFile In
   , _nix_localNodeSocketPath  :: String
-  , _nix_targetNodes          :: NonEmpty NodeIPv4Address
+  , _nix_targetNodes          :: NonEmpty (WithAlias NodeIPv4Address)
   } deriving (Show, Eq)
 
 deriving instance Generic NixServiceOptions
 
+{-
 newtype NodeConfigDiffTime =
   NodeConfigDiffTime { nodeConfigDiffTime :: Clock.DiffTime }
   deriving (Eq, Ord, Read, Show)
@@ -80,6 +87,36 @@ instance ToJSON NodeConfigDiffTime where
   toJSON NodeConfigDiffTime {..} =
     let picoSeconds = Clock.diffTimeToPicoseconds nodeConfigDiffTime
      in toJSON $ picoSeconds `div` 10^(12 :: Int)
+-}
+
+-- only works on JSON Object types
+data WithAlias a =
+  WithAlias String a
+
+deriving instance Show a    => Show    (WithAlias a)
+deriving instance Eq   a    => Eq      (WithAlias a)
+-- deriving instance Generic a => Generic (WithAlias a)
+
+-- { "alias": "foo", "addr": ..., "port": ... }
+instance (Show a, FromJSON a) => FromJSON (WithAlias a) where
+  parseJSON val = case fromJSON val of
+      Error e          -> fail e
+      Success payload  -> withObject "WithAlias" (\o' -> do
+        alias <- o' .:? "name" .!= show payload
+        pure $ WithAlias alias payload
+        ) val
+
+instance ToJSON a => ToJSON (WithAlias a) where
+  toJSON (WithAlias _ val) = toJSON val
+
+
+-- TODO: add comment about hard-coded default value
+-- and when to change (account for long GC pauses at target nodes)
+getKeepaliveTimeout :: NixServiceOptions -> Clock.DiffTime
+getKeepaliveTimeout = maybe 10 Clock.secondsToDiffTime . _nix_keepalive
+
+getAliasPayload :: WithAlias a -> a
+getAliasPayload (WithAlias _ val) = val
 
 getNodeConfigFile :: NixServiceOptions -> Maybe FilePath
 getNodeConfigFile = _nix_nodeConfigFile

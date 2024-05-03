@@ -24,6 +24,7 @@ import           Cardano.Api hiding (txFee)
 import           Cardano.Benchmarking.GeneratorTx.NodeToNode
 import           Cardano.Benchmarking.GeneratorTx.Submission
 import           Cardano.Benchmarking.GeneratorTx.SubmissionClient
+import           Cardano.TxGenerator.Setup.NixService
 import           Cardano.Benchmarking.LogTypes
 import           Cardano.Benchmarking.TpsThrottle
 import           Cardano.Benchmarking.Types
@@ -155,7 +156,7 @@ walletBenchmark :: forall era. IsShelleyBasedEra era
   -> Trace IO NodeToNodeSubmissionTrace
   -> ConnectClient
   -> String
-  -> NonEmpty NodeIPv4Address
+  -> NonEmpty (WithAlias NodeIPv4Address)
   -> TPSRate
   -> SubmissionErrorPolicy
   -> AsType era
@@ -182,7 +183,7 @@ walletBenchmark
   = liftIO $ do
   traceDebug "******* Tx generator, phase 2: pay to recipients *******"
 
-  remoteAddresses <- forM targets lookupNodeAddress
+  remoteAddresses <- forM targets (lookupNodeAddress . getAliasPayload)
   let numTargets :: Natural = fromIntegral $ NE.length targets
 
   traceDebug $ "******* Tx generator, launching Tx peers:  " ++ show (NE.length remoteAddresses) ++ " of them"
