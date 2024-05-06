@@ -1,10 +1,7 @@
-{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ViewPatterns #-}
 
 {-# OPTIONS_GHC -Wno-all-missed-specialisations #-}
 {-# OPTIONS_GHC -Wno-missed-specialisations #-}
@@ -24,7 +21,6 @@ import           Cardano.Api hiding (txFee)
 import           Cardano.Benchmarking.GeneratorTx.NodeToNode
 import           Cardano.Benchmarking.GeneratorTx.Submission
 import           Cardano.Benchmarking.GeneratorTx.SubmissionClient
-import           Cardano.TxGenerator.Setup.NixService
 import           Cardano.Benchmarking.LogTypes
 import           Cardano.Benchmarking.TpsThrottle
 import           Cardano.Benchmarking.Types
@@ -32,27 +28,19 @@ import           Cardano.Benchmarking.Wallet (TxStream)
 import           Cardano.Logging
 import           Cardano.Node.Configuration.NodeAddress
 import           Cardano.Prelude
+import           Cardano.TxGenerator.Setup.NixService
 import           Cardano.TxGenerator.Types (NumberOfTxs, TPSRate, TxGenError (..))
 
 import           Prelude (String)
 
-import           Control.Arrow ((+++))
 import qualified Control.Concurrent.STM as STM
-import           Control.Exception (throw)
-import qualified Data.ByteString.Char8 as BS
-import           Data.Functor.Adjunction (uncozipL)
-import qualified Data.List as List (intercalate, unlines)
 import qualified Data.List.NonEmpty as NE
 import           Data.Text (pack)
 import qualified Data.Time.Clock as Clock
+import           Data.Tuple.Extra (secondM)
 import           GHC.Conc (labelThread)
-import           GHC.IO.Exception (IOErrorType (..), IOException (..))
-import           Network.DNS (DNSError (DecodeError), Domain, defaultResolvConf, lookupRDNS,
-                   makeResolvSeed, withResolver)
-import           Network.Socket (AddrInfo (..), AddrInfoFlag (..), Family (..), SockAddr (..),
-                   SocketType (Stream), addrFamily, addrFlags, addrSocketType, defaultHints,
-                   getAddrInfo, hostAddress6ToTuple, hostAddressToTuple)
-import           Numeric (showHex)
+import           Network.Socket (AddrInfo (..), AddrInfoFlag (..), Family (..), SocketType (Stream),
+                   addrFamily, addrFlags, addrSocketType, defaultHints, getAddrInfo)
 
 
 type AsyncBenchmarkControl = (Async (), [Async ()], IO SubmissionSummary, IO ())
@@ -78,78 +66,30 @@ lookupNodeAddress node = do
     , addrCanonName  = Nothing
     }
 
-addrInfoToName :: AddrInfo -> Either FilePath Domain
-addrInfoToName AddrInfo {..} =
-  case addrAddress of
-    SockAddrInet  _port (hostAddressToTuple -> _addr@(b1,b2,b3,b4)) ->
-      Right $ mkIPname "." show [b1,b2,b3,b4]
-    SockAddrInet6 _port _flowInfo addr6 _scopeID ->
-      let (b1,b2,b3,b4,b5,b6,b7,b8) = hostAddress6ToTuple addr6
-       in Right $ mkIPname ":" showHex' [b1,b2,b3,b4,b5,b6,b7,b8]
-    SockAddrUnix path -> Left path
-  where
-    mkIPname :: ByteString -> (t -> String) -> [t] -> ByteString
-    mkIPname separator render =
-      BS.intercalate separator . map (BS.pack . render)
-    showHex' :: (Integral t, Show t) => t -> String
-    showHex' 0 = ""
-    showHex' n = showHex n ""
-
-mkUnixError :: String -> DNSError
-mkUnixError path =
-      DecodeError $ "Unix domain socket passed to reverse DNS: " ++ path
-
 handleTxSubmissionClientError ::
      Trace IO (TraceBenchTxSubmit TxId)
-  -> Network.Socket.AddrInfo
+  -> (String, Network.Socket.AddrInfo)
   -> ReportRef
   -> SubmissionErrorPolicy
   -> SomeException
   -> IO ()
 handleTxSubmissionClientError
   traceSubmit
-  remoteAddr
+  (remoteName, remoteAddr)
   reportRef
   errorPolicy
   (SomeException err) = do
-    resolveSeed <- makeResolvSeed defaultResolvConf
-    errorOrName <- withResolver resolveSeed \resolver ->
-                      liftM join . uncozipL .
-                          (pure . mkUnixError +++ lookupRDNS resolver) $
-                                  addrInfoToName remoteAddr
-    case errorOrName of
-      Left  dnsErr     -> throw =<< mkDNSErr dnsErr
-      Right maybeNames -> do
-        let errDesc = mconcat
-              [ "Exception while talking to peer "
-              , case maybeNames of
-                  []         -> "<<< IP unresolved >>>"
-                  name@(_:_) -> List.intercalate ", " $ map BS.unpack name
-              , " (", show $ addrAddress remoteAddr, "): "
-              , show err]
-        submitThreadReport reportRef (Left errDesc)
-        case errorPolicy of
-          FailOnError -> throwIO err
-          LogErrors   -> traceWith traceSubmit $
-            TraceBenchTxSubError (pack errDesc)
+    submitThreadReport reportRef (Left errDesc)
+    case errorPolicy of
+      FailOnError -> throwIO err
+      LogErrors   -> traceWith traceSubmit $
+        TraceBenchTxSubError (pack errDesc)
    where
-    mkDNSErr :: DNSError -> IO IOException
-    mkDNSErr dnsError = do
-         let ioe_description = List.unlines $
-               [ List.intercalate " " $
-                   [ "Encountered Unix domain socket attempting to resolve"
-                   , "remote address"
-                   , show remoteAddr
-                   , "to hostname via reverse DNS:"
-                   , show dnsError ]
-               , "in an attempt to handle the following exception: "
-               , displayException err ]
-         throw IOError { ioe_handle   = Nothing
-                       , ioe_type     = InvalidArgument
-                       , ioe_errno    = Nothing
-                       , ioe_filename = Just "GeneratorTx.hs"
-                       , ioe_location = "handleTxSubmissionClientError"
-                       , .. }
+    errDesc = mconcat
+      [ "Exception while talking to peer "
+      , remoteName
+      , " (", show (addrAddress remoteAddr), "): "
+      , show err]
 
 walletBenchmark :: forall era. IsShelleyBasedEra era
   => Trace IO (TraceBenchTxSubmit TxId)
@@ -183,7 +123,7 @@ walletBenchmark
   = liftIO $ do
   traceDebug "******* Tx generator, phase 2: pay to recipients *******"
 
-  remoteAddresses <- forM targets (lookupNodeAddress . getAliasPayload)
+  remoteAddresses <- forM targets (\(WithAlias name addr) -> secondM lookupNodeAddress (name, addr))
   let numTargets :: Natural = fromIntegral $ NE.length targets
 
   traceDebug $ "******* Tx generator, launching Tx peers:  " ++ show (NE.length remoteAddresses) ++ " of them"
@@ -195,26 +135,18 @@ walletBenchmark
 
   txStreamRef <- newMVar $ StreamActive txSource
   allAsyncs <- forM (zip reportRefs $ NE.toList remoteAddresses) $
-    \(reportRef, remoteAddr) -> do
-      resolveSeed <- makeResolvSeed defaultResolvConf
-      errorOrName <- withResolver resolveSeed \resolver ->
-                        liftM join . uncozipL .
-                            (pure . mkUnixError +++ lookupRDNS resolver) $
-                                    addrInfoToName remoteAddr
-      let errorHandler = handleTxSubmissionClientError traceSubmit remoteAddr reportRef errorPolicy
+    \(reportRef, remoteInfo@(remoteName, remoteAddrInfo)) -> do
+      let errorHandler = handleTxSubmissionClientError traceSubmit remoteInfo reportRef errorPolicy
           client = txSubmissionClient
                      traceN2N
                      traceSubmit
                      (txStreamSource txStreamRef tpsThrottle)
                      (submitSubmissionThreadStats reportRef)
-          remoteAddrString = show $ addrAddress remoteAddr
-          serviceTargets | Right names@(_:_) <- errorOrName
-                         = List.intercalate ", " $ map BS.unpack names
-                         | otherwise = remoteAddrString
-      asyncThread <- async $ handle errorHandler (connectClient remoteAddr client)
+          remoteAddrString = show $ addrAddress remoteAddrInfo
+      asyncThread <- async $ handle errorHandler (connectClient remoteAddrInfo client)
       let tid = asyncThreadId asyncThread
       labelThread tid $ "txSubmissionClient " ++ show tid ++
-                            " servicing " ++ serviceTargets
+                            " servicing " ++ remoteName ++ " (" ++ remoteAddrString ++ ")"
       pure asyncThread
 
   tpsThrottleThread <- async $ do

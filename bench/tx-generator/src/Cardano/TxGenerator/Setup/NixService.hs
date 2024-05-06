@@ -1,19 +1,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
--- TODO: remove me
-{-# OPTIONS_GHC -fno-warn-unused-imports #-}
-
-
 module Cardano.TxGenerator.Setup.NixService
        ( NixServiceOptions (..)
-       --, NodeConfigDiffTime (..)
        , WithAlias(..)
        , getKeepaliveTimeout
        , getAliasPayload
@@ -34,13 +27,10 @@ import           Cardano.Node.Types (AdjustFilePaths (..))
 import           Cardano.TxGenerator.Internal.Orphans ()
 import           Cardano.TxGenerator.Types
 
-import qualified Control.Applicative as App (empty)
 import           Data.Aeson as Aeson
--- import qualified Data.Aeson as Aeson (Options, defaultOptions, genericParseJSON, withObject)
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Maybe (fromMaybe)
-import           Data.Scientific (Scientific)
-import qualified Data.Time.Clock as Clock (DiffTime, diffTimeToPicoseconds, secondsToDiffTime)
+import qualified Data.Time.Clock as Clock (DiffTime, secondsToDiffTime)
 import           GHC.Generics (Generic)
 
 
@@ -66,29 +56,6 @@ data NixServiceOptions = NixServiceOptions {
 
 deriving instance Generic NixServiceOptions
 
-{-
-newtype NodeConfigDiffTime =
-  NodeConfigDiffTime { nodeConfigDiffTime :: Clock.DiffTime }
-  deriving (Eq, Ord, Read, Show)
-
-instance FromJSON NodeConfigDiffTime where
-  omittedField = Just $
-    NodeConfigDiffTime { nodeConfigDiffTime = Clock.secondsToDiffTime 10 }
-  parseJSON = \case
-    Number (scientificNumber :: Scientific) ->
-      -- DiffTime uses fixed-point picoseconds.
-      let nodeConfigDiffTime :: Clock.DiffTime =
-            Clock.secondsToDiffTime $ round scientificNumber
-       in pure $ NodeConfigDiffTime {..}
-    _                       -> App.empty -- this fails
-
-instance ToJSON NodeConfigDiffTime where
-  omitField NodeConfigDiffTime {..} = nodeConfigDiffTime == 10
-  toJSON NodeConfigDiffTime {..} =
-    let picoSeconds = Clock.diffTimeToPicoseconds nodeConfigDiffTime
-     in toJSON $ picoSeconds `div` 10^(12 :: Int)
--}
-
 -- only works on JSON Object types
 data WithAlias a =
   WithAlias String a
@@ -110,8 +77,8 @@ instance ToJSON a => ToJSON (WithAlias a) where
   toJSON (WithAlias _ val) = toJSON val
 
 
--- TODO: add comment about hard-coded default value
--- and when to change (account for long GC pauses at target nodes)
+-- Long GC pauses on target nodes can trigger spurious MVar deadlock
+-- detection. Increasing this timeout can help mitigate those errors.
 getKeepaliveTimeout :: NixServiceOptions -> Clock.DiffTime
 getKeepaliveTimeout = maybe 10 Clock.secondsToDiffTime . _nix_keepalive
 
