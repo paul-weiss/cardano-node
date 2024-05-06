@@ -9,16 +9,11 @@ module Cardano.Testnet.Test.Gov.UpdateCommittee
   ) where
 
 import           Cardano.Api as Api
-import           Cardano.Api.Error (displayError)
 import           Cardano.Api.Shelley
 
-import qualified Cardano.Crypto.Hash as L
 import qualified Cardano.Ledger.Conway.Genesis as L
 import qualified Cardano.Ledger.Conway.Governance as L
-import qualified Cardano.Ledger.Conway.Governance as Ledger
 import qualified Cardano.Ledger.Credential as L
-import qualified Cardano.Ledger.Hashes as L
-import qualified Cardano.Ledger.Shelley.LedgerState as L
 import           Cardano.Testnet
 
 import           Prelude
@@ -84,6 +79,11 @@ hprop_epoch_state_update_committee = H.integrationWorkspace "update-committee" $
   committeeVkey2Fp <- H.noteShow $ work </> defaultCommitteeVkeyFp 2
   _committeeSkey2Fp <- H.noteShow $ work </> defaultCommitteeSkeyFp 2
 
+  -- This is the member we will first elect i.e not put into the
+  -- conway genesis.
+  committeeVkey3Fp <- H.noteShow $ work </> defaultCommitteeVkeyFp 3
+  _committeeSkey3Fp <- H.noteShow $ work </> defaultCommitteeSkeyFp 3
+
   -- Read committee cold keys from disk to put into conway genesis
 
   comKeyHash1Str <- filter (/= '\n') <$> H.execCli' execConfigOffline
@@ -123,7 +123,7 @@ hprop_epoch_state_update_committee = H.integrationWorkspace "update-committee" $
 
   poolNode1 <- H.headM poolNodes
   poolSprocket1 <- H.noteShow $ nodeSprocket $ poolRuntime poolNode1
-  _execConfig <- H.mkExecConfig tempBaseAbsPath poolSprocket1 testnetMagic
+  execConfig <- H.mkExecConfig tempBaseAbsPath poolSprocket1 testnetMagic
 
   let socketName' = IO.sprocketName poolSprocket1
       socketBase = IO.sprocketBase poolSprocket1 -- /tmp
@@ -134,5 +134,38 @@ hprop_epoch_state_update_committee = H.integrationWorkspace "update-committee" $
   H.note_ $ "Sprocket: " <> show poolSprocket1
   H.note_ $ "Abs path: " <> tempAbsBasePath'
   H.note_ $ "Socketpath: " <> socketPath
+
+  -- Step 1. We will first propose to add an additional member to the
+  -- constitutional committeee. DRep and SPO voting thresholds must be met.
+
+  -- Create proposal to add a new member to the committee
+
+  proposalAnchorFile <- H.note $ work </> "sample-proposal-anchor"
+  H.writeFile proposalAnchorFile "dummy anchor data"
+
+  proposalAnchorDataHash <- H.execCli' execConfig
+    [ eraToString era, "governance"
+    , "hash", "anchor-data", "--file-text", proposalAnchorFile
+    ]
+
+
+  proposalFile <- H.note $ work </> "sample-proposal-anchor"
+  stakeVkeyFp <- H.note $ work </> "stake.vkey"
+  stakeSKeyFp <- H.note $ work </> "stake.skey"
+
+  _ <- P.cliStakeAddressKeyGen tempAbsPath'
+         $ P.KeyNames { P.verificationKeyFile = stakeVkeyFp
+                      , P.signingKeyFile = stakeSKeyFp
+                      }
+  void $ H.execCli' execConfig $
+    [ eraToString era, "governance", "action", "update-committee"
+    , "--governance-action-deposit", show @Integer 1_000_000 --- TODO: Get from protocol parameters
+    , "--deposit-return-stake-verification-key-file", stakeVkeyFp
+    , "--anchor-url", "https://tinyurl.com/3wrwb2as"
+    , "--anchor-data-hash", proposalAnchorDataHash
+    , "--add-cc-cold-verification-key-file", committeeVkey3Fp
+    , "--out-file", proposalFile
+    ]
+
   return ()
 
