@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Cardano.Testnet.Test.EpochState.Gov.UpdateCommittee
+module Cardano.Testnet.Test.Gov.UpdateCommittee
   ( hprop_epoch_state_update_committee
   ) where
 
