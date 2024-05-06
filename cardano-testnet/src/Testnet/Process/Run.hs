@@ -14,6 +14,7 @@ module Testnet.Process.Run
   , procSubmitApi
   , procChairman
   , mkExecConfig
+  , mkExecConfigOffline
   , ProcessError(..)
   , ExecutableError(..)
   ) where
@@ -171,6 +172,22 @@ mkExecConfig tempBaseAbsPath sprocket networkId = do
       -- The environment must be passed onto child process on Windows in order to
       -- successfully start that process.
       <> env'
+    , H.execConfigCwd = Last $ Just tempBaseAbsPath
+    }
+
+mkExecConfigOffline :: ()
+  => MonadTest m
+  => MonadIO m
+  => FilePath
+  -> m ExecConfig
+mkExecConfigOffline tempBaseAbsPath   = do
+  env' <- H.evalIO IO.getEnvironment
+
+  return H.ExecConfig
+    { H.execConfigEnv = Last $ Just
+      -- The environment must be passed onto child process on Windows in order to
+      -- successfully start that process.
+      env'
     , H.execConfigCwd = Last $ Just tempBaseAbsPath
     }
 
