@@ -240,6 +240,7 @@ signTx execConfig cEra work prefix txBody signatoryKeyPairs = do
     ]
   return signedTx
 
+-- TODO: Move me to Testnet.Process.Cli
 -- | Submits a signed transaction using @cardano-cli@.
 submitTx
   :: HasCallStack
