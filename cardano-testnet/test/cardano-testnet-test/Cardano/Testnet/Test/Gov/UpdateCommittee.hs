@@ -68,7 +68,7 @@ hprop_gov_update_committee = H.integrationWorkspace "update-committee" $ \tempAb
 
   -- Create committee cold keys
   H.createDirectoryIfMissing_ $ tempAbsPath' </> work </> "committee-keys"
-  H.forConcurrently_ [1..2] $ \n -> do
+  H.forConcurrently_ [1..3] $ \n -> do
     H.execCli' execConfigOffline
       [ anyEraToString cEra, "governance", "committee"
       , "key-gen-cold"
