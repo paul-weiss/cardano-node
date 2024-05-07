@@ -22,6 +22,7 @@ module Testnet.Defaults
   , defaultDRepKeyPair
   , defaultDelegatorStakeKeyPair
   , defaultSPOKeys
+  , defaultSPOKeyPair
   , defaultSPOColdKeyPair
   , defaultSPOColdVKeyFp
   , defaultSPOColdSKeyFp
@@ -535,6 +536,9 @@ defaultCommitteeKeyPair n = PaymentKeyPair (defaultCommitteeVkeyFp n) (defaultCo
 -- | The relative path to DRep key pairs in directories created by cardano-testnet
 defaultDRepKeyPair :: Int -> PaymentKeyPair
 defaultDRepKeyPair n = PaymentKeyPair (defaultDRepVkeyFp n) (defaultDRepSkeyFp n)
+
+defaultSPOKeyPair :: Int -> PaymentKeyPair
+defaultSPOKeyPair n = PaymentKeyPair (defaultSPOColdVKeyFp n) (defaultSPOColdSKeyFp n)
 
 -- | The relative path to SPO cold verification key in directories created by cardano-testnet
 defaultSPOColdVKeyFp :: Int -> FilePath

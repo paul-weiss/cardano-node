@@ -219,19 +219,24 @@ hprop_gov_update_committee = H.integrationWorkspace "update-committee" $ \tempAb
       drepVotes :: [(String, Int)]
       drepVotes = [("yes", 1), ("yes", 2), ("yes", 3)]
 
+
   annotateShow spoVotes
   annotateShow drepVotes
 
-  voteFiles <- generateVoteFiles execConfig work "vote-files"
-                                 governanceActionTxId governanceActionIndex
-                                 [(defaultSPOKeys idx, vote) | (vote, idx) <- spoVotes]
+  voteFiles <- error "TODO"
+                   --SPO.generateVoteFiles execConfig work "vote-files"
+                   --              governanceActionTxId governanceActionIndex
+                   --              $ error "TODO" --[(defaultSPOKeys idx, vote) | (vote, idx) <- spoVotes]
 
   -- Submit votes
   voteTxBodyFp <- createVotingTxBody execConfig epochStateView sbe work "vote-tx-body"
                                      voteFiles wallet0
 
-  voteTxFp <- signTx execConfig cEra work "signed-vote-tx" voteTxBodyFp
-                     (paymentKeyInfoPair wallet0:[defaultCommitteeKeyPair n | (_, n) <- allVotes])
+  voteTxFp <- error "TODO"
+              -- signTx execConfig cEra work "signed-vote-tx" voteTxBodyFp
+              --       $ error "TODO"
+                     --(paymentKeyInfoPair wallet0:[defaultSPOKeyPair n | (_, n) <- spoVotes])
+                     -- TODO: voting SPOs and DReps need to sign this
 
   submitTx execConfig cEra voteTxFp
   -- Confirm the proposal has been ratified
