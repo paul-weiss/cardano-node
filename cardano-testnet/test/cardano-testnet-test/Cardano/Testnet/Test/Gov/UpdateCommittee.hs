@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 
 module Cardano.Testnet.Test.Gov.UpdateCommittee
-  ( hprop_epoch_state_update_committee
+  ( hprop_gov_update_committee
   ) where
 
 import           Cardano.Api as Api
@@ -22,9 +22,11 @@ import           Control.Monad
 import           Data.Bifunctor
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
 import           System.FilePath ((</>))
 
 import           Testnet.Components.Configuration
+import           Testnet.Components.DReps
 import           Testnet.Components.Query
 import           Testnet.Components.TestWatchdog
 import           Testnet.Defaults
@@ -42,8 +44,8 @@ import qualified Hedgehog.Extras.Stock.IO.Network.Sprocket as IO
 -- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/UpdateCommittee/"'@
 -- Generate a testnet with a committee defined in the Conway genesis. Add and remove members from the committee
 -- in a single governance proposal.
-hprop_epoch_state_update_committee :: Property
-hprop_epoch_state_update_committee = H.integrationWorkspace "update-committee" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
+hprop_gov_update_committee :: Property
+hprop_gov_update_committee = H.integrationWorkspace "update-committee" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
   -- Start a local test net
   conf@Conf { tempAbsPath } <- mkConf tempAbsBasePath'
   let tempAbsPath' = unTmpAbsPath tempAbsPath
@@ -114,7 +116,7 @@ hprop_epoch_state_update_committee = H.integrationWorkspace "update-committee" $
   TestnetRuntime
     { testnetMagic
     , poolNodes
-    , wallets=_wallet0:_wallet1:_
+    , wallets=wallet0:_wallet1:_
     , configurationFile
     } <- cardanoTestnet
            fastTestnetOptions
@@ -159,13 +161,37 @@ hprop_epoch_state_update_committee = H.integrationWorkspace "update-committee" $
                       }
   void $ H.execCli' execConfig $
     [ eraToString era, "governance", "action", "update-committee"
+    , "--testnet"
     , "--governance-action-deposit", show @Integer 1_000_000 --- TODO: Get from protocol parameters
     , "--deposit-return-stake-verification-key-file", stakeVkeyFp
     , "--anchor-url", "https://tinyurl.com/3wrwb2as"
     , "--anchor-data-hash", proposalAnchorDataHash
     , "--add-cc-cold-verification-key-file", committeeVkey3Fp
+    , "--epoch", "1000"
+    , "--threshold", "0.5"
     , "--out-file", proposalFile
     ]
+
+  txbodyFp <- H.note $ work </> "tx.body"
+  epochStateView <- getEpochStateView (File configurationFile) (File socketPath)
+
+  txin1 <- findLargestUtxoForPaymentKey epochStateView sbe wallet0
+
+  void $ H.execCli' execConfig
+    [ eraToString era, "transaction", "build"
+    , "--change-address", Text.unpack $ paymentKeyInfoAddr wallet0
+    , "--tx-in", Text.unpack $ renderTxIn txin1
+    , "--tx-out", Text.unpack (paymentKeyInfoAddr wallet0) <> "+" <> show @Int 5_000_000
+    , "--proposal-file", proposalFile
+    , "--out-file", txbodyFp
+    ]
+
+  signedProposalTx <- signTx execConfig cEra work "signed-proposal"
+                           (File txbodyFp) [paymentKeyInfoPair wallet0]
+
+  submitTx execConfig cEra signedProposalTx
+
+  -- Confirm the proposal has been ratified
 
   return ()
 

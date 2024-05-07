@@ -19,6 +19,7 @@ import qualified Cardano.Testnet.Test.Gov.ProposeNewConstitution
 import qualified Cardano.Testnet.Test.Gov.ProposeNewConstitutionSPO as LedgerEvents
 import qualified Cardano.Testnet.Test.Gov.TreasuryGrowth as LedgerEvents
 import qualified Cardano.Testnet.Test.Gov.TreasuryWithdrawal as LedgerEvents
+import qualified Cardano.Testnet.Test.Gov.UpdateCommittee
 import qualified Cardano.Testnet.Test.Node.Shutdown
 import qualified Cardano.Testnet.Test.SanityCheck as LedgerEvents
 import qualified Cardano.Testnet.Test.SubmitApi.Babbage.Transaction
@@ -47,7 +48,8 @@ tests = do
             , H.ignoreOnWindows "Treasury Growth" LedgerEvents.prop_check_if_treasury_is_growing
             -- TODO: Replace foldBlocks with checkLedgerStateCondition
             , T.testGroup "Governance"
-                [ H.ignoreOnMacAndWindows "ProposeAndRatifyNewConstitution" Cardano.Testnet.Test.Gov.ProposeNewConstitution.hprop_ledger_events_propose_new_constitution
+                [ H.ignoreOnMacAndWindows "UpdateCommittee" Cardano.Testnet.Test.Gov.UpdateCommittee.hprop_gov_update_committee
+                , H.ignoreOnMacAndWindows "ProposeAndRatifyNewConstitution" Cardano.Testnet.Test.Gov.ProposeNewConstitution.hprop_ledger_events_propose_new_constitution
                -- TODO: "DRep Activity" is too flaky at the moment. Disabling until we can fix it.
                -- , H.ignoreOnWindows "DRep Activity" Cardano.Testnet.Test.LedgerEvents.Gov.DRepActivity.hprop_check_drep_activity
                 , H.ignoreOnWindows "DRep Deposits" Cardano.Testnet.Test.Gov.DRepDeposits.hprop_ledger_events_drep_deposits

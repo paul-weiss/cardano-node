@@ -228,6 +228,7 @@ signTx execConfig cEra work prefix txBody signatoryKeyPairs = do
     ]
   return signedTx
 
+-- TODO: Move me to Testnet.Property.Utils
 -- | Submits a signed transaction using @cardano-cli@.
 submitTx
   :: (MonadTest m, MonadCatch m, MonadIO m)
