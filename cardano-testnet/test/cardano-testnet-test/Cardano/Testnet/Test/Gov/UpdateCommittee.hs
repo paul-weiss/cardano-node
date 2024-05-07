@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -9,6 +10,7 @@ module Cardano.Testnet.Test.Gov.UpdateCommittee
   ) where
 
 import           Cardano.Api as Api
+import           Cardano.Api.Error
 import           Cardano.Api.Shelley
 
 import qualified Cardano.Ledger.Conway.Genesis as L
@@ -22,12 +24,15 @@ import           Control.Monad
 import           Data.Bifunctor
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map.Strict as Map
+import           Data.String
 import qualified Data.Text as Text
+import           GHC.Stack
 import           System.FilePath ((</>))
 
 import           Testnet.Components.Configuration
-import           Testnet.Components.DReps
+import           Testnet.Components.DReps as DRep
 import           Testnet.Components.Query
+import           Testnet.Components.SPO as SPO
 import           Testnet.Components.TestWatchdog
 import           Testnet.Defaults
 import qualified Testnet.Process.Cli as P
@@ -191,6 +196,44 @@ hprop_gov_update_committee = H.integrationWorkspace "update-committee" $ \tempAb
 
   submitTx execConfig cEra signedProposalTx
 
+  -- Create and submit votes on committee update proposal
+  -- Proposal was successfully submitted, now we vote on the proposal and confirm it was ratified
+
+  governanceActionTxId <- retrieveTransactionId execConfig signedProposalTx
+
+  !propSubmittedResult <- findCondition (maybeExtractGovernanceActionIndex sbe (fromString governanceActionTxId))
+                                        configurationFile
+                                        socketPath
+                                        (EpochNo 10)
+
+  governanceActionIndex <- case propSubmittedResult of
+                             Left e ->
+                               H.failMessage callStack
+                                 $ "findCondition failed with: " <> displayError e
+                             Right Nothing ->
+                               H.failMessage callStack "Couldn't find proposal."
+                             Right (Just a) -> return a
+
+  let spoVotes :: [(String, Int)]
+      spoVotes =  [("yes", 1), ("yes", 2), ("yes", 3)]
+      drepVotes :: [(String, Int)]
+      drepVotes = [("yes", 1), ("yes", 2), ("yes", 3)]
+
+  annotateShow spoVotes
+  annotateShow drepVotes
+
+  voteFiles <- generateVoteFiles execConfig work "vote-files"
+                                 governanceActionTxId governanceActionIndex
+                                 [(defaultSPOKeys idx, vote) | (vote, idx) <- spoVotes]
+
+  -- Submit votes
+  voteTxBodyFp <- createVotingTxBody execConfig epochStateView sbe work "vote-tx-body"
+                                     voteFiles wallet0
+
+  voteTxFp <- signTx execConfig cEra work "signed-vote-tx" voteTxBodyFp
+                     (paymentKeyInfoPair wallet0:[defaultCommitteeKeyPair n | (_, n) <- allVotes])
+
+  submitTx execConfig cEra voteTxFp
   -- Confirm the proposal has been ratified
 
   return ()

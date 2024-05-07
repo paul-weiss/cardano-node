@@ -14,6 +14,7 @@ module Testnet.Defaults
   , defaultByronProtocolParamsJsonValue
   , defaultYamlConfig
   , defaultConwayGenesis
+  , defaultCommitteeKeyPair
   , defaultCommitteeVkeyFp
   , defaultCommitteeSkeyFp
   , defaultDRepVkeyFp
@@ -527,6 +528,9 @@ defaultDRepSkeyFp
   :: Int -- ^ The DRep's index (starts at 1)
   -> FilePath
 defaultDRepSkeyFp n = "drep-keys" </> ("drep" <> show n) </> "drep.skey"
+
+defaultCommitteeKeyPair :: Int -> PaymentKeyPair
+defaultCommitteeKeyPair n = PaymentKeyPair (defaultCommitteeVkeyFp n) (defaultCommitteeSkeyFp n)
 
 -- | The relative path to DRep key pairs in directories created by cardano-testnet
 defaultDRepKeyPair :: Int -> PaymentKeyPair
