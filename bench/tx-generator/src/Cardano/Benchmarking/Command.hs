@@ -10,22 +10,21 @@ module Cardano.Benchmarking.Command
 )
 where
 
-import           Prelude
-import           System.Exit
-
-import           Data.Aeson (fromJSON)
-import           Data.ByteString.Lazy as BSL
-import           Data.Text.IO as T
-import           Options.Applicative as Opt
-
-import           Ouroboros.Network.NodeToClient (withIOManager)
-
 import           Cardano.Benchmarking.Compiler (compileOptions)
 import           Cardano.Benchmarking.Script (parseScriptFileAeson, runScript)
 import           Cardano.Benchmarking.Script.Aeson (parseJSONFile, prettyPrint)
 import           Cardano.Benchmarking.Script.Selftest (runSelftest)
 import           Cardano.Benchmarking.Version as Version
 import           Cardano.TxGenerator.Setup.NixService
+import           Ouroboros.Network.NodeToClient (withIOManager)
+
+import           Prelude
+
+import           Data.Aeson (fromJSON)
+import           Data.ByteString.Lazy as BSL
+import           Data.Text.IO as T
+import           Options.Applicative as Opt
+import           System.Exit
 
 
 data Command

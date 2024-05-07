@@ -1,15 +1,17 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Cardano.TxGenerator.Setup.NixService
        ( NixServiceOptions (..)
-       , WithAlias(..)
+       , NodeDescription (..)
        , getKeepaliveTimeout
-       , getAliasPayload
+       , getNodeAlias
        , getNodeConfigFile
        , setNodeConfigFile
        , txGenTxParams
@@ -22,13 +24,16 @@ import           Cardano.Api (AnyCardanoEra, mapFile)
 
 import           Cardano.CLI.Types.Common (FileDirection (..), SigningKeyFile)
 import qualified Cardano.Ledger.Coin as L
-import           Cardano.Node.Configuration.NodeAddress (NodeIPv4Address)
+import           Cardano.Node.Configuration.NodeAddress (NodeAddress' (..), NodeHostIPv4Address (..), NodeIPv4Address)
 import           Cardano.Node.Types (AdjustFilePaths (..))
 import           Cardano.TxGenerator.Internal.Orphans ()
 import           Cardano.TxGenerator.Types
 
 import           Data.Aeson as Aeson
-import           Data.List.NonEmpty (NonEmpty)
+import           Data.Aeson.Types as Aeson
+import           Data.Foldable (find)
+import           Data.Function (on)
+import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Maybe (fromMaybe)
 import qualified Data.Time.Clock as Clock (DiffTime, secondsToDiffTime)
 import           GHC.Generics (Generic)
@@ -51,30 +56,39 @@ data NixServiceOptions = NixServiceOptions {
   , _nix_cardanoTracerSocket  :: Maybe FilePath
   , _nix_sigKey               :: SigningKeyFile In
   , _nix_localNodeSocketPath  :: String
-  , _nix_targetNodes          :: NonEmpty (WithAlias NodeIPv4Address)
+  , _nix_targetNodes          :: NonEmpty NodeDescription
   } deriving (Show, Eq)
 
 deriving instance Generic NixServiceOptions
 
 -- only works on JSON Object types
-data WithAlias a =
-  WithAlias String a
-
-deriving instance Show a    => Show    (WithAlias a)
-deriving instance Eq   a    => Eq      (WithAlias a)
--- deriving instance Generic a => Generic (WithAlias a)
+data NodeDescription =
+  NodeDescription {
+      -- NodeIPAddress would be agnostic to IPv4 vs. IPv6 and likely
+      -- a small investment here.
+      ndAddr    :: NodeIPv4Address
+    , ndName    :: String
+    } deriving (Eq, Show, Generic)
 
 -- { "alias": "foo", "addr": ..., "port": ... }
-instance (Show a, FromJSON a) => FromJSON (WithAlias a) where
-  parseJSON val = case fromJSON val of
-      Error e          -> fail e
-      Success payload  -> withObject "WithAlias" (\o' -> do
-        alias <- o' .:? "name" .!= show payload
-        pure $ WithAlias alias payload
-        ) val
+instance FromJSON NodeDescription where
+  parseJSON = withObject "NodeDescription" \v -> do
+    unNodeHostIPv4Address
+            <- v .:  "addr"    <?> Key "addr"
+    naPort  <- fmap toEnum $
+                 v .:  "port"  <?> Key "port"
+    let naHostAddress = NodeHostIPv4Address {..}
+        ndAddr        = NodeAddress {..}
+    ndName  <- v .:? "name"    <?> Key "name" .!= show ndAddr
+    pure $ NodeDescription {..}
 
-instance ToJSON a => ToJSON (WithAlias a) where
-  toJSON (WithAlias _ val) = toJSON val
+instance ToJSON NodeDescription where
+  toJSON NodeDescription {..} = object
+       [ "name" .= ndName
+       , "addr" .= unNodeHostIPv4Address
+       , "port" .= fromEnum naPort ] where
+    _addr@(NodeAddress {..}) = ndAddr
+    _hostAddr@(NodeHostIPv4Address {..}) = naHostAddress
 
 
 -- Long GC pauses on target nodes can trigger spurious MVar deadlock
@@ -82,8 +96,10 @@ instance ToJSON a => ToJSON (WithAlias a) where
 getKeepaliveTimeout :: NixServiceOptions -> Clock.DiffTime
 getKeepaliveTimeout = maybe 10 Clock.secondsToDiffTime . _nix_keepalive
 
-getAliasPayload :: WithAlias a -> a
-getAliasPayload (WithAlias _ val) = val
+getNodeAlias :: NixServiceOptions -> NodeIPv4Address -> Maybe String
+getNodeAlias NixServiceOptions {..} ip = fmap ndName $
+  find ((=:=:= ip) . ndAddr) _nix_targetNodes where
+    (=:=:=) = (==) `on` naHostAddress
 
 getNodeConfigFile :: NixServiceOptions -> Maybe FilePath
 getNodeConfigFile = _nix_nodeConfigFile

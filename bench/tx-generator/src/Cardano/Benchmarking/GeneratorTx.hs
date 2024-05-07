@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -50,8 +51,7 @@ waitBenchmark traceSubmit (feeder, workers, mkSummary, _) = liftIO $ do
   mapM_ waitCatch (feeder : workers)
   traceWith traceSubmit . TraceBenchTxSubSummary =<< mkSummary
 
-lookupNodeAddress ::
-  NodeAddress' NodeHostIPv4Address -> IO AddrInfo
+lookupNodeAddress :: NodeIPv4Address -> IO AddrInfo
 lookupNodeAddress node = do
   (remoteAddr:_) <- getAddrInfo (Just hints) (Just targetNodeHost) (Just targetNodePort)
   return remoteAddr
@@ -96,7 +96,7 @@ walletBenchmark :: forall era. IsShelleyBasedEra era
   -> Trace IO NodeToNodeSubmissionTrace
   -> ConnectClient
   -> String
-  -> NonEmpty (WithAlias NodeIPv4Address)
+  -> NonEmpty NodeDescription
   -> TPSRate
   -> SubmissionErrorPolicy
   -> AsType era
@@ -123,8 +123,10 @@ walletBenchmark
   = liftIO $ do
   traceDebug "******* Tx generator, phase 2: pay to recipients *******"
 
-  remoteAddresses <- forM targets (\(WithAlias name addr) -> secondM lookupNodeAddress (name, addr))
   let numTargets :: Natural = fromIntegral $ NE.length targets
+      lookupTarget :: NodeDescription -> IO (String, AddrInfo)
+      lookupTarget NodeDescription {..} = secondM lookupNodeAddress (ndName, ndAddr)
+  remoteAddresses <- forM targets lookupTarget
 
   traceDebug $ "******* Tx generator, launching Tx peers:  " ++ show (NE.length remoteAddresses) ++ " of them"
 
