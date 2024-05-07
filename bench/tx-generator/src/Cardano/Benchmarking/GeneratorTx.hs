@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -40,6 +41,12 @@ import           Data.Text (pack)
 import qualified Data.Time.Clock as Clock
 import           Data.Tuple.Extra (secondM)
 import           GHC.Conc (labelThread)
+
+#if MIN_VERSION_base(4,18,0)
+import           Data.Maybe (fromMaybe)
+import           GHC.Conc.Sync (threadLabel)
+#endif
+
 import           Network.Socket (AddrInfo (..), AddrInfoFlag (..), Family (..), SocketType (Stream),
                    addrFamily, addrFlags, addrSocketType, defaultHints, getAddrInfo)
 
@@ -79,17 +86,24 @@ handleTxSubmissionClientError
   reportRef
   errorPolicy
   (SomeException err) = do
+    tid   <- myThreadId
+#if MIN_VERSION_base(4,18,0)
+    label <- threadLabel tid
+    let labelStr = " " ++ fromMaybe "(unlabelled)" label ++ " "
+#else
+    let labelStr = " (base version too low to examine thread labels) "
+#endif
+    let errDesc = "Thread " ++ show tid
+                       ++ labelStr
+                       ++ "Exception while talking to peer "
+                       ++ remoteName ++ " ("
+                       ++ show (addrAddress remoteAddr) ++ "): "
+                       ++ show err
     submitThreadReport reportRef (Left errDesc)
     case errorPolicy of
       FailOnError -> throwIO err
       LogErrors   -> traceWith traceSubmit $
         TraceBenchTxSubError (pack errDesc)
-   where
-    errDesc = mconcat
-      [ "Exception while talking to peer "
-      , remoteName
-      , " (", show (addrAddress remoteAddr), "): "
-      , show err]
 
 walletBenchmark :: forall era. IsShelleyBasedEra era
   => Trace IO (TraceBenchTxSubmit TxId)
@@ -156,6 +170,8 @@ walletBenchmark
     traceWith traceSubmit $ TraceBenchTxSubDebug "tpsLimitedFeeder : transmitting done"
     atomically $ sendStop tpsThrottle
     traceWith traceSubmit $ TraceBenchTxSubDebug "tpsLimitedFeeder : shutdown done"
+  let tid = asyncThreadId tpsThrottleThread
+  labelThread tid $ "tpsThrottleThread " ++ show tid
 
   let tpsFeederShutdown = do
         cancel tpsThrottleThread

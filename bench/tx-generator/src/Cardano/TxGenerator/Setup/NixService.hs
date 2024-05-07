@@ -105,7 +105,7 @@ getNodeConfigFile :: NixServiceOptions -> Maybe FilePath
 getNodeConfigFile = _nix_nodeConfigFile
 
 setNodeConfigFile :: NixServiceOptions -> FilePath -> NixServiceOptions
-setNodeConfigFile opts filePath = opts {_nix_nodeConfigFile = Just filePath }
+setNodeConfigFile opts filePath = opts { _nix_nodeConfigFile = Just filePath }
 
 -- dropping the '_nix_ prefix of above Haskell ADT field labels is assumed
 -- to match JSON attribute names as provided by the Nix service definition
