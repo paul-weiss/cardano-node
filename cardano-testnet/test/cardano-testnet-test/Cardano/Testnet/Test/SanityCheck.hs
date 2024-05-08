@@ -41,7 +41,7 @@ newtype AdditionalCatcher
 -- setting timeouts for expected results etc.
 hprop_ledger_events_sanity_check :: Property
 hprop_ledger_events_sanity_check = H.integrationWorkspace "ledger-events-sanity-check" $ \tempAbsBasePath' -> runWithDefaultWatchdog_ $ do
-  -- Start a local test net
+
   conf <- mkConf tempAbsBasePath'
 
   let fastTestnetOptions = cardanoDefaultTestnetOptions
