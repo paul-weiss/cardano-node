@@ -64,6 +64,7 @@ hprop_leadershipSchedule = integrationRetryWorkspace 0 "babbage-leadership-sched
                           { cardanoNodes = cardanoDefaultTestnetNodeOptions
                           , cardanoNodeEra = AnyCardanoEra era -- TODO: We should only support the latest era and the upcoming era
                           , cardanoActiveSlotsCoeff = 0.1
+                          , cardanoEpochLength = 200
                           }
 
   tr@TestnetRuntime
