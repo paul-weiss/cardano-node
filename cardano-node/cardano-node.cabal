@@ -143,8 +143,7 @@ library
                       , aeson >= 2.1.0.0
                       , async
                       , base16-bytestring
-                      , binary ^>= 0.8.8.0
-                      , bytestring ^>= 0.10.12.0
+                      , bytestring
                       , cardano-api ^>= 8.39.3.0
                       , cardano-crypto-class
                       , cardano-crypto-wrapper

@@ -97,7 +97,7 @@ import           Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbo
 import           Control.Exception (SomeException)
 import           Data.Aeson.Types (ToJSON)
 import           Data.Proxy (Proxy (..))
-import qualified Data.Text.IO.Utf8 as T
+import qualified Data.Text.IO as T
 import           GHC.Generics (Generic)
 import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import qualified Network.Socket as Socket
