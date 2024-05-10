@@ -1,3 +1,5 @@
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -9,6 +11,10 @@ module Cardano.Benchmarking.Command
 , commandParser -- for tests
 )
 where
+
+#if !defined(mingw32_HOST_OS)
+#define UNIX
+#endif
 
 import           Cardano.Benchmarking.Compiler (compileOptions)
 import           Cardano.Benchmarking.Script (parseScriptFileAeson, runScript)
@@ -26,6 +32,13 @@ import           Data.Text.IO as T
 import           Options.Applicative as Opt
 import           System.Exit
 
+#ifdef UNIX
+import           Control.Concurrent as Conc (killThread, mkWeakThreadId, myThreadId)
+import           Data.Foldable as Fold (forM_)
+import           GHC.Weak as Weak (deRefWeak)
+import           System.Posix.Signals as Sig (Handler (CatchOnce), installHandler, sigINT, sigTERM)
+#endif
+
 
 data Command
   = Json FilePath
@@ -36,6 +49,7 @@ data Command
 
 runCommand :: IO ()
 runCommand = withIOManager $ \iocp -> do
+  installSignalHandler
   cmd <- customExecParser
            (prefs showHelpOnEmpty)
            (info commandParser mempty)
@@ -66,6 +80,15 @@ runCommand = withIOManager $ \iocp -> do
   handleError = \case
     Right _  -> exitSuccess
     Left err -> die $ "tx-generator:Cardano.Command: " ++ show err
+  installSignalHandler :: IO ()
+  installSignalHandler = do
+#ifdef UNIX
+    tidWk <- Conc.mkWeakThreadId =<< Conc.myThreadId
+    _ <- Fold.forM_ [Sig.sigINT, Sig.sigTERM] $ \sig ->
+           flip (Sig.installHandler sig) Nothing $ Sig.CatchOnce do
+      mapM_ Conc.killThread =<< Weak.deRefWeak tidWk
+#endif
+    pure ()
 
   mangleNodeConfig :: Maybe FilePath -> NixServiceOptions -> IO NixServiceOptions
   mangleNodeConfig fp opts = case (getNodeConfigFile opts, fp) of
