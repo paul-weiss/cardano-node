@@ -70,7 +70,7 @@ import           Ouroboros.Network.KeepAlive (TraceKeepAliveClient (..))
 import qualified Ouroboros.Network.NodeToClient as NtC
 import           Ouroboros.Network.NodeToNode (ErrorPolicyTrace (..), RemoteAddress, WithAddr (..))
 import qualified Ouroboros.Network.NodeToNode as NtN
-import           Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
+import           Ouroboros.Network.PeerSelection.Governor (ChurnCounters, DebugPeerSelection (..),
                    PeerSelectionCounters, TracePeerSelection (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers (TraceLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerStateActions (PeerSelectionActionsTrace (..))
@@ -97,7 +97,7 @@ import           Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbo
 import           Control.Exception (SomeException)
 import           Data.Aeson.Types (ToJSON)
 import           Data.Proxy (Proxy (..))
-import qualified Data.Text.IO as T
+import qualified Data.Text.IO.Utf8 as T
 import           GHC.Generics (Generic)
 import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import qualified Network.Socket as Socket
@@ -547,6 +547,12 @@ docTracersFirstPhase condConfigFileName = do
     peerSelectionCountersTrDoc <- documentTracer (peerSelectionCountersTr ::
       Trace IO PeerSelectionCounters)
 
+    churnCountersTr  <-  mkCardanoTracer
+      trBase trForward mbTrEKG
+      ["Net", "Churn"]
+    configureTracers configReflection trConfig [churnCountersTr]
+    churnCountersTrDoc <- documentTracer (churnCountersTr :: Trace IO ChurnCounters)
+
     peerSelectionActionsTr  <-  mkCardanoTracer
       trBase trForward mbTrEKG
       ["Net", "PeerSelection", "Actions"]
@@ -722,6 +728,7 @@ docTracersFirstPhase condConfigFileName = do
             <> debugPeerSelectionTrDoc
             <> debugPeerSelectionResponderTrDoc
             <> peerSelectionCountersTrDoc
+            <> churnCountersTrDoc
             <> peerSelectionActionsTrDoc
             <> connectionManagerTrDoc
             <> connectionManagerTransitionsTrDoc
