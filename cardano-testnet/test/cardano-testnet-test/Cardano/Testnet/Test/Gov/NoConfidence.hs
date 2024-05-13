@@ -39,10 +39,10 @@ import           Testnet.Components.Query
 import           Testnet.Components.SPO as SPO
 import           Testnet.Components.TestWatchdog
 import           Testnet.Defaults
-import qualified Testnet.Process.Cli as P
+import           Testnet.Process.Cli
 import qualified Testnet.Process.Run as H
 import           Testnet.Property.Util (integrationWorkspace)
-import           Testnet.Runtime
+import           Testnet.Types
 
 import           Hedgehog
 import qualified Hedgehog as H
@@ -132,7 +132,7 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
   H.note_ $ "Socketpath: " <> socketPath
 
   mCommitteePresent
-    <- H.leftFailM $ findCondition (committeeIsPresent True) configurationFile socketPath (EpochNo 3)
+    <- H.leftFailM $ findCondition (committeeIsPresent True) configurationFile (File socketPath) (EpochNo 3)
   H.nothingFail mCommitteePresent
 
   -- Step 2. Propose motion of no confidence. DRep and SPO voting thresholds must be met.
@@ -152,10 +152,9 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
   stakeVkeyFp <- H.note $ work </> "stake.vkey"
   stakeSKeyFp <- H.note $ work </> "stake.skey"
 
-  _ <- P.cliStakeAddressKeyGen tempAbsPath'
-         $ P.KeyNames { P.verificationKeyFile = stakeVkeyFp
-                      , P.signingKeyFile = stakeSKeyFp
-                      }
+  cliStakeAddressKeyGen
+    $ KeyPair (File stakeVkeyFp) (File stakeSKeyFp)
+
   void $ H.execCli' execConfig $
     [ eraToString era, "governance", "action", "create-no-confidence"
     , "--testnet"
@@ -167,7 +166,7 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
     ]
 
   txbodyFp <- H.note $ work </> "tx.body"
-  epochStateView <- getEpochStateView (File configurationFile) (File socketPath)
+  epochStateView <- getEpochStateView configurationFile (File socketPath)
 
   txin1 <- findLargestUtxoForPaymentKey epochStateView sbe wallet0
 
@@ -181,7 +180,7 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
     ]
 
   signedProposalTx <- signTx execConfig cEra work "signed-proposal"
-                           (File txbodyFp) [paymentKeyInfoPair wallet0]
+                           (File txbodyFp) [SomeKeyPair $ paymentKeyInfoPair wallet0]
 
   submitTx execConfig cEra signedProposalTx
 
@@ -191,9 +190,9 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
 
   governanceActionTxId <- retrieveTransactionId execConfig signedProposalTx
 
-  !propSubmittedResult <- findCondition (maybeExtractGovernanceActionIndex sbe (fromString governanceActionTxId))
+  !propSubmittedResult <- findCondition (maybeExtractGovernanceActionIndex (fromString governanceActionTxId))
                                         configurationFile
-                                        socketPath
+                                        (File socketPath)
                                         (EpochNo 10)
 
   governanceActionIndex <- case propSubmittedResult of
@@ -211,7 +210,7 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
 
   spoVoteFiles <- SPO.generateVoteFiles ceo execConfig work "spo-vote-files"
                    governanceActionTxId governanceActionIndex
-                   [(defaultSPOKeys idx, vote) | (vote, idx) <- spoVotes]
+                   [(defaultSpoKeys idx, vote) | (vote, idx) <- spoVotes]
   drepVoteFiles <- DRep.generateVoteFiles execConfig work "drep-vote-files"
                     governanceActionTxId governanceActionIndex
                     [(defaultDRepKeyPair idx, vote) | (vote, idx) <- drepVotes]
@@ -222,12 +221,12 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
   -- Submit votes
   voteTxBodyFp <- createVotingTxBody execConfig epochStateView sbe work "vote-tx-body"
                                      allVoteFiles wallet0
-  let spoSigningKeys = [defaultSPOKeyPair n | (_, n) <- spoVotes]
-      drepSigningKeys = [defaultDRepKeyPair n | (_, n) <- drepVotes]
+  let spoSigningKeys = [SomeKeyPair $ defaultSpoColdKeyPair n | (_, n) <- spoVotes]
+      drepSigningKeys = [SomeKeyPair $ defaultDRepKeyPair n | (_, n) <- drepVotes]
       allVoteSigningKeys = spoSigningKeys ++ drepSigningKeys
 
   voteTxFp <- signTx execConfig cEra work "signed-vote-tx" voteTxBodyFp
-                (paymentKeyInfoPair wallet0 : allVoteSigningKeys)
+                (SomeKeyPair (paymentKeyInfoPair wallet0) : allVoteSigningKeys)
 
   submitTx execConfig cEra voteTxFp
 
@@ -235,7 +234,7 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
   -- for an empty constitutional committee.
 
   mCommitteeEmpty
-    <- H.leftFailM $ findCondition (committeeIsPresent False) configurationFile socketPath (EpochNo 5)
+    <- H.leftFailM $ findCondition (committeeIsPresent False) configurationFile (File socketPath) (EpochNo 5)
   H.nothingFail mCommitteeEmpty
 
 -- | Checks if the committee is empty or not.
