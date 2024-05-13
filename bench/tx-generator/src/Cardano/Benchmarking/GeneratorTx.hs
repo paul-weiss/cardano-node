@@ -43,7 +43,9 @@ import           Data.Tuple.Extra (secondM)
 import           GHC.Conc (labelThread)
 
 #if MIN_VERSION_base(4,18,0)
-import           Data.Maybe (fromMaybe)
+-- fromMaybe is imported via Cardano.Prelude
+-- However, this configuration actually uses it.
+-- import           Data.Maybe (fromMaybe)
 import           GHC.Conc.Sync (threadLabel)
 #endif
 
