@@ -36,6 +36,7 @@ import           Cardano.TxGenerator.Types (NumberOfTxs, TPSRate, TxGenError (..
 import           Prelude (String)
 
 import qualified Control.Concurrent.STM as STM
+import qualified Data.List as List (intercalate)
 import qualified Data.List.NonEmpty as NE
 import           Data.Text (pack)
 import qualified Data.Time.Clock as Clock
@@ -91,16 +92,18 @@ handleTxSubmissionClientError
     tid   <- myThreadId
 #if MIN_VERSION_base(4,18,0)
     label <- threadLabel tid
-    let labelStr = " " ++ fromMaybe "(unlabelled)" label ++ " "
+    let labelStr = fromMaybe "(unlabelled)" label
 #else
-    let labelStr = " (base version too low to examine thread labels) "
+    let labelStr = "(base version too low to examine thread labels)"
 #endif
-    let errDesc = "Thread " ++ show tid
-                       ++ labelStr
-                       ++ "Exception while talking to peer "
-                       ++ remoteName ++ " ("
-                       ++ show (addrAddress remoteAddr) ++ "): "
-                       ++ show err
+    let errDesc = List.intercalate " " $
+                    [ "Thread"
+                    , show tid
+                    , labelStr
+                    , "Exception while talking to peer "
+                    , remoteName
+                    , "(" ++ show (addrAddress remoteAddr) ++ "):"
+                    , show err ]
     submitThreadReport reportRef (Left errDesc)
     case errorPolicy of
       FailOnError -> throwIO err
