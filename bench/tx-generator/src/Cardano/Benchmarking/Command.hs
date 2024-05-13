@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -Wno-all-missed-specialisations -Wno-orphans #-}
 
 module Cardano.Benchmarking.Command
@@ -35,10 +36,21 @@ import           System.Exit
 #ifdef UNIX
 import           Control.Concurrent as Conc (killThread, mkWeakThreadId, myThreadId)
 import           Data.Foldable as Fold (forM_)
+import           Data.List as List (intercalate)
+import           Data.Time.Format as Time (defaultTimeLocale, formatTime)
+import           Data.Time.Clock.System as Time (getSystemTime, systemToUTCTime)
 import           GHC.Weak as Weak (deRefWeak)
-import           System.Posix.Signals as Sig (Handler (CatchOnce), installHandler, sigINT, sigTERM)
+import           System.Posix.Signals as Sig (Handler (CatchInfoOnce), SignalInfo (..), SignalSpecificInfo (..), fullSignalSet, installHandler, sigINT, sigTERM)
+#if MIN_VERSION_base(4,18,0)
+import           Data.Maybe as Maybe (fromMaybe)
+import           GHC.Conc.Sync as Conc (threadLabel)
+#endif
 #endif
 
+#ifdef UNIX
+deriving instance Show SignalInfo
+deriving instance Show SignalSpecificInfo
+#endif
 
 data Command
   = Json FilePath
@@ -84,9 +96,28 @@ runCommand = withIOManager $ \iocp -> do
   installSignalHandler = do
 #ifdef UNIX
     tidWk <- Conc.mkWeakThreadId =<< Conc.myThreadId
+    let signalHandler = Sig.CatchInfoOnce signalHandler'
+        signalHandler' sigInfo = do
+          maybeTID <- Weak.deRefWeak tidWk
+          case maybeTID of
+            Nothing  -> pure ()
+            Just tid -> do
+              utcTime <- Time.systemToUTCTime <$> Time.getSystemTime
+              -- It's meant to match Cardano.Tracers.Handlers.Logs.Utils
+              -- The hope was to avoid the package dependency.
+              let formatTimeStamp = formatTime' "%Y-%m-%dT%H-%M-%S"
+                  formatTime' = Time.formatTime Time.defaultTimeLocale
+                  timeStamp = formatTimeStamp utcTime
+#if MIN_VERSION_base(4,18,0)
+              maybeLabel <- Conc.threadLabel tid
+              let labelStr = fromMaybe "(thread label unset)" maybeLabel
+#else
+              let labelStr = "(base version insufficient to read thread label)"
+#endif
+              Prelude.putStrLn $ List.intercalate " " [timeStamp, labelStr, show tid, "received signal", show sigInfo]
+              Conc.killThread tid
     _ <- Fold.forM_ [Sig.sigINT, Sig.sigTERM] $ \sig ->
-           flip (Sig.installHandler sig) Nothing $ Sig.CatchOnce do
-      mapM_ Conc.killThread =<< Weak.deRefWeak tidWk
+           Sig.installHandler sig signalHandler $ Just fullSignalSet
 #endif
     pure ()
 
