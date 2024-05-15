@@ -99,6 +99,7 @@ library
   build-depends:        base >=4.12 && <5
                       , aeson
                       , aeson-pretty
+                      , array
                       , async
                       , attoparsec
                       , attoparsec-aeson
