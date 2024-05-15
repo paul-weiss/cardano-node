@@ -191,6 +191,7 @@ test-suite cardano-testnet-test
                         Cardano.Testnet.Test.Gov.DRepDeposit
                         Cardano.Testnet.Test.Gov.DRepRetirement
                         Cardano.Testnet.Test.Gov.InfoAction
+                        Cardano.Testnet.Test.Gov.InitiateHardfork
                         Cardano.Testnet.Test.Gov.NoConfidence
                         Cardano.Testnet.Test.Gov.ProposeNewConstitution
                         Cardano.Testnet.Test.Gov.ProposeNewConstitutionSPO

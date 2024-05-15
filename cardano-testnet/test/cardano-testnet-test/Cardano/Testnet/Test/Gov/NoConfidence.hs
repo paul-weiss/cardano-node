@@ -134,7 +134,7 @@ hprop_gov_no_confidence = integrationWorkspace "no-confidence" $ \tempAbsBasePat
   mCommitteePresent
     <- H.leftFailM $ findCondition (committeeIsPresent True) configurationFile (File socketPath) (EpochNo 3)
   H.nothingFail mCommitteePresent
-
+  H.failMessage callStack "Purposefully"
   -- Step 2. Propose motion of no confidence. DRep and SPO voting thresholds must be met.
 
   -- Create proposal to add a new member to the committee
