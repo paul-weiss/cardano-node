@@ -144,11 +144,17 @@ getConnectClient = do
                        (protocolToCodecConfig protocol)
                        networkMagic
 waitBenchmark :: String -> ActionM ()
-waitBenchmark n = getEnvThreads n >>= waitBenchmarkCore
+waitBenchmark n = do
+  abcMaybe <- getEnvThreads n
+  case abcMaybe of
+    Just abc -> waitBenchmarkCore abc
+    Nothing  -> do
+      throwE . Env.TxGenError . TxGenError $
+        ("waitBenchmark: missing AsyncBenchmarkControl" :: String)
 
 cancelBenchmark :: String -> ActionM ()
 cancelBenchmark n = do
-  ctl@(_, _ , _ , shutdownAction) <- getEnvThreads n
+  Just ctl@(_, _ , _ , shutdownAction) <- getEnvThreads n
   liftIO shutdownAction
   waitBenchmarkCore ctl
 

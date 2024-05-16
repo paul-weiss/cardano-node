@@ -35,6 +35,7 @@ import           System.Exit
 
 #ifdef UNIX
 import           Control.Concurrent as Conc (killThread, mkWeakThreadId, myThreadId)
+
 import           Data.Foldable as Fold (forM_)
 import           Data.List as List (intercalate)
 import           Data.Time.Format as Time (defaultTimeLocale, formatTime)
@@ -79,19 +80,19 @@ runCommand = withIOManager $ \iocp -> do
 
       case compileOptions finalOpts of
         Right script -> runScript script iocp >>= handleError
-        err -> handleError err
+        err -> die $ "tx-generator:Cardano.Command.runCommand JsonHL: " ++ show err
     Compile file -> do
       o <- parseJSONFile fromJSON file
       case compileOptions o of
         Right script -> BSL.putStr $ prettyPrint script
-        err -> handleError err
+        Left err -> die $ "tx-generator:Cardano.Command.runCommand Compile: " ++ show err
     Selftest outFile -> runSelftest iocp outFile >>= handleError
     VersionCmd -> runVersionCommand
   where
-  handleError :: Show a => Either a b -> IO ()
+  handleError :: Show a => (Either a b, abc) -> IO ()
   handleError = \case
-    Right _  -> exitSuccess
-    Left err -> die $ "tx-generator:Cardano.Command: " ++ show err
+    (Right _,  _) -> exitSuccess
+    (Left err, _) -> die $ "tx-generator:Cardano.Command.runCommand handleError: " ++ show err
   installSignalHandler :: IO ()
   installSignalHandler = do
 #ifdef UNIX

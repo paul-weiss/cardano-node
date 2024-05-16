@@ -12,7 +12,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Cardano.Benchmarking.LogTypes
-  ( BenchTracers(..)
+  ( AsyncBenchmarkControl
+  , BenchTracers(..)
   , NodeToNodeSubmissionTrace(..)
   , SendRecvConnect
   , SendRecvTxSubmission2
@@ -21,6 +22,9 @@ module Cardano.Benchmarking.LogTypes
   ) where
 
 import           Prelude
+
+import qualified Control.Concurrent.Async as Async (Async)
+import qualified Control.Concurrent.STM as STM (TArray)
 
 import           Data.Text
 import           Data.Time.Clock (DiffTime, NominalDiffTime)
@@ -53,6 +57,8 @@ import           Cardano.Benchmarking.Types
 import           Cardano.Benchmarking.Version as Version
 import           Cardano.TxGenerator.PlutusContext (PlutusBudgetSummary)
 import           Cardano.TxGenerator.Types (TPSRate)
+
+type AsyncBenchmarkControl = (Async.Async (), STM.TArray Int (Async.Async ()), IO SubmissionSummary, IO ())
 
 data BenchTracers =
   BenchTracers

@@ -60,8 +60,6 @@ import           Network.Socket (AddrInfo (..), AddrInfoFlag (..), Family (..), 
                    addrFamily, addrFlags, addrSocketType, defaultHints, getAddrInfo)
 
 
-type AsyncBenchmarkControl = (Async (), STM.TArray Int (Async ()), IO SubmissionSummary, IO ())
-
 waitBenchmark :: Trace IO (TraceBenchTxSubmit TxId) -> AsyncBenchmarkControl -> ExceptT TxGenError IO ()
 waitBenchmark traceSubmit (feeder, workers, mkSummary, _) = liftIO $ do
   workers' :: [Async ()] <- STM.atomically $ MArray.getElems workers
@@ -201,7 +199,6 @@ walletBenchmark
                       when (counter == 2 * top + 2) do
                         STM.signalTSemN (fromIntegral $ top + 2) semaphore
                       -- It only needs to signal getting past here, not to wait.
-    pure (allAsyncs, reportRefs)
 
   tpsThrottleThread <- async $ do
     waitBarrier
