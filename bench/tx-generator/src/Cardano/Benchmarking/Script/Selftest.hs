@@ -16,7 +16,7 @@ import           Cardano.Benchmarking.LogTypes (AsyncBenchmarkControl)
 import           Cardano.Benchmarking.Script.Action
 import           Cardano.Benchmarking.Script.Aeson (prettyPrint)
 import           Cardano.Benchmarking.Script.Env as Env (Env (Env, envThreads))
-import qualified Cardano.Benchmarking.Script.Env as Env (Error, runActionM, setBenchTracers)
+import qualified Cardano.Benchmarking.Script.Env as Env (Error, runActionMEnv, setBenchTracers)
 import           Cardano.Benchmarking.Script.Types
 import           Cardano.Benchmarking.Tracer (initNullTracers)
 import qualified Cardano.Ledger.Coin as L
@@ -43,15 +43,15 @@ import           Paths_tx_generator
 -- transaction 'Streaming.Stream' that
 -- 'Cardano.Benchmarking.Script.Core.submitInEra'
 -- does 'show' and 'writeFile' on.
-runSelftest :: IOManager -> Maybe FilePath -> IO (Either Env.Error (), AsyncBenchmarkControl)
-runSelftest iom outFile = do
+runSelftest :: Env -> IOManager -> Maybe FilePath -> IO (Either Env.Error (), AsyncBenchmarkControl)
+runSelftest env iom outFile = do
   protocolFile <-  getDataFileName "data/protocol-parameters.json"
   let
     submitMode = maybe DiscardTX DumpToFile outFile
     fullScript = do
         Env.setBenchTracers initNullTracers
         forM_ (testScript protocolFile submitMode) action
-  (result, Env { envThreads }, ()) <- Env.runActionM fullScript iom
+  (result, Env { envThreads }, ()) <- Env.runActionMEnv env fullScript iom
   case "tx-submit-benchmark" `Map.lookup` envThreads of
     Just abcTVar -> do
       abcMaybe <- STM.atomically $ STM.readTVar abcTVar

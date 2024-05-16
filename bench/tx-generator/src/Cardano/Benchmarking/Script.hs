@@ -11,6 +11,16 @@ module Cardano.Benchmarking.Script
   )
 where
 
+import           Cardano.Benchmarking.LogTypes
+import           Cardano.Benchmarking.Script.Action
+import           Cardano.Benchmarking.Script.Aeson (parseScriptFileAeson)
+import           Cardano.Benchmarking.Script.Core (setProtocolParameters)
+import qualified Cardano.Benchmarking.Script.Env as Env (ActionM, Env (Env, envThreads),
+                   Error (TxGenError), getEnvThreads, runActionMEnv, traceError)
+import           Cardano.Benchmarking.Script.Types
+import qualified Cardano.TxGenerator.Types as Types (TxGenError (..))
+import           Ouroboros.Network.NodeToClient (IOManager)
+
 import           Prelude
 
 import           Control.Concurrent (threadDelay)
@@ -23,32 +33,22 @@ import qualified Data.List as List (intercalate)
 import qualified Data.Map as Map (lookup)
 import           System.Mem (performGC)
 
-import           Ouroboros.Network.NodeToClient (IOManager)
-
-import           Cardano.Benchmarking.LogTypes
-import           Cardano.Benchmarking.Script.Action
-import           Cardano.Benchmarking.Script.Aeson (parseScriptFileAeson)
-import           Cardano.Benchmarking.Script.Core (setProtocolParameters)
-import qualified Cardano.Benchmarking.Script.Env as Env (ActionM, Env (Env, envThreads), Error (TxGenError), getEnvThreads, runActionM, runActionMEnv, traceError)
-import           Cardano.Benchmarking.Script.Types
-import qualified Cardano.TxGenerator.Types as Types (TxGenError (..))
-
 type Script = [Action]
 
-runScript :: Script -> IOManager -> IO (Either Env.Error (), AsyncBenchmarkControl)
-runScript script iom = do
+runScript :: Env.Env -> Script -> IOManager -> IO (Either Env.Error (), AsyncBenchmarkControl)
+runScript env script iom = do
   result <- go
   performGC
   threadDelay $ 150 * 1_000
   return result
   where
     go :: IO (Either Env.Error (), AsyncBenchmarkControl)
-    go = Env.runActionM execScript iom >>= \case
-      (Right abc, env, ()) -> do
-        cleanup env shutDownLogging
+    go = Env.runActionMEnv env execScript iom >>= \case
+      (Right abc, env', ()) -> do
+        cleanup env' shutDownLogging
         pure (Right (), abc)
-      (Left err,  env@Env.Env { .. }, ()) -> do
-        cleanup env (Env.traceError (show err) >> shutDownLogging)
+      (Left err,  env'@Env.Env { .. }, ()) -> do
+        cleanup env' (Env.traceError (show err) >> shutDownLogging)
         case "tx-submit-benchmark" `Map.lookup` envThreads of
           Just abcTVar -> do
             abcMaybe <- STM.atomically $ STM.readTVar abcTVar
@@ -62,7 +62,7 @@ runScript script iom = do
                                 , "AsyncBenchmarkControl absent from map" ]
       where
         cleanup :: Env.Env -> Env.ActionM () -> IO ()
-        cleanup env acts = void $ Env.runActionMEnv env acts iom
+        cleanup env' acts = void $ Env.runActionMEnv env' acts iom
         execScript :: Env.ActionM AsyncBenchmarkControl
         execScript = do
           setProtocolParameters QueryLocalNode
