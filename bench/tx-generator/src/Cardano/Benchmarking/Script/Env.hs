@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -102,7 +103,7 @@ data Env = Env { -- | 'Cardano.Api.ProtocolParameters' is ultimately
                , envNetworkId :: Maybe NetworkId
                , envSocketPath :: Maybe FilePath
                , envKeys :: Map String (SigningKey PaymentKey)
-               , envThreads :: Map String (STM.TVar (Maybe AsyncBenchmarkControl))
+               , envThreads :: STM.TVar (Maybe AsyncBenchmarkControl)
                , envWallets :: Map String WalletRef
                , envSummary :: Maybe PlutusBudgetSummary
                }
@@ -118,15 +119,16 @@ emptyEnv = Env { protoParams = Nothing
                , envProtocol = Nothing
                , envNetworkId = Nothing
                , envSocketPath = Nothing
-               , envThreads = Map.empty
+               -- This never escapes: it's always overridden.
+               , envThreads = undefined
                , envWallets = Map.empty
                , envSummary = Nothing
                }
 
 mkNewEnv :: STM Env
 mkNewEnv = do
-  ctl <- STM.newTVar Nothing
-  pure emptyEnv { envThreads = "tx-submit-benchmark" `Map.singleton` ctl }
+  envThreads <- STM.newTVar Nothing
+  pure emptyEnv { envThreads }
 
 -- | This abbreviates an `ExceptT` and `RWST` with particular types
 -- used as parameters.
@@ -200,14 +202,10 @@ setEnvSocketPath :: FilePath -> ActionM ()
 setEnvSocketPath val = modifyEnv (\e -> e { envSocketPath = Just val })
 
 -- | Write accessor for `envThreads`.
-setEnvThreads :: String -> AsyncBenchmarkControl -> ActionM ()
-setEnvThreads key val = do
-  threadMap <- lift $ RWS.gets envThreads
-  case Map.lookup key threadMap of
-    Nothing -> do
-      abcTVar <- liftIO do STM.atomically do STM.newTVar $ Just val
-      modifyEnv (\env -> env { envThreads = Map.insert key abcTVar threadMap })
-    Just abcTVar -> liftIO do STM.atomically $ abcTVar `STM.writeTVar` Just val
+setEnvThreads :: AsyncBenchmarkControl -> ActionM ()
+setEnvThreads abc = do
+  abcTVar <- lift $ RWS.gets envThreads
+  liftIO do STM.atomically $ abcTVar `STM.writeTVar` Just abc
 
 -- | Write accessor for `envWallets`.
 setEnvWallets :: String -> WalletRef -> ActionM ()
@@ -261,9 +259,9 @@ getEnvSocketPath :: ActionM SocketPath
 getEnvSocketPath = File <$> getEnvVal envSocketPath "SocketPath"
 
 -- | Read accessor for `envThreads`.
-getEnvThreads :: String -> ActionM (Maybe AsyncBenchmarkControl)
-getEnvThreads key = do
-  abcTVar <- getEnvMap envThreads key
+getEnvThreads :: ActionM (Maybe AsyncBenchmarkControl)
+getEnvThreads = do
+  abcTVar <- lift $ RWS.gets envThreads
   liftIO do STM.atomically $ STM.readTVar abcTVar
 
 -- | Read accessor for `envWallets`.

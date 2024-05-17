@@ -31,7 +31,6 @@ import           Control.Monad
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import           Data.Either (fromRight)
 import qualified Data.List as List (intercalate)
-import qualified Data.Map as Map (lookup)
 import           Data.String
 
 import           Paths_tx_generator
@@ -52,19 +51,13 @@ runSelftest env iom outFile = do
         Env.setBenchTracers initNullTracers
         forM_ (testScript protocolFile submitMode) action
   (result, Env { envThreads }, ()) <- Env.runActionMEnv env fullScript iom
-  case "tx-submit-benchmark" `Map.lookup` envThreads of
-    Just abcTVar -> do
-      abcMaybe <- STM.atomically $ STM.readTVar abcTVar
-      case abcMaybe of
-        Just abc -> pure (result, abc)
-        Nothing  -> error $
+  abcMaybe <- STM.atomically $ STM.readTVar envThreads
+  case abcMaybe of
+    Just abc -> pure (result, abc)
+    Nothing  -> error $
           List.intercalate " "
               [ "Cardano.Benchmarking.Script.Selftest.runSelftest:"
               , "thread state improperly initialized" ]
-    Nothing  -> error $
-      List.intercalate " "
-          [ "Cardano.Benchmarking.Script.Selftest.runSelftest:"
-          , "thread state uninitialized" ]
 
 -- | 'printJSON' prints out the list of actions using Aeson.
 -- It has no callers within @cardano-node@.

@@ -143,18 +143,18 @@ getConnectClient = do
                        mempty -- (btSubmission2_ tracers)
                        (protocolToCodecConfig protocol)
                        networkMagic
-waitBenchmark :: String -> ActionM ()
-waitBenchmark n = do
-  abcMaybe <- getEnvThreads n
+waitBenchmark :: ActionM ()
+waitBenchmark = do
+  abcMaybe <- getEnvThreads
   case abcMaybe of
     Just abc -> waitBenchmarkCore abc
     Nothing  -> do
       throwE . Env.TxGenError . TxGenError $
         ("waitBenchmark: missing AsyncBenchmarkControl" :: String)
 
-cancelBenchmark :: String -> ActionM ()
-cancelBenchmark n = do
-  Just abc@(AsyncBenchmarkControl { .. }) <- getEnvThreads n
+cancelBenchmark :: ActionM ()
+cancelBenchmark = do
+  Just abc@(AsyncBenchmarkControl { .. }) <- getEnvThreads
   liftIO abcShutdown
   waitBenchmarkCore abc
 
@@ -284,7 +284,7 @@ benchmarkTxStream txStream targetNodes threadName tps txCount era = do
   ret <- liftIO $ runExceptT $ coreCall era
   case ret of
     Left err -> liftTxGenError err
-    Right ctl -> setEnvThreads threadName ctl
+    Right ctl -> setEnvThreads ctl
 
 evalGenerator :: IsShelleyBasedEra era => Generator -> TxGenTxParams -> AsType era -> ActionM (TxStream IO era)
 evalGenerator generator txParams@TxGenTxParams{txParamFee = fee} era = do

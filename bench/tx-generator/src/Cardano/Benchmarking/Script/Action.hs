@@ -47,8 +47,8 @@ action a = case a of
   AddFund era wallet txIn lovelace keyName -> addFund era wallet txIn lovelace keyName
   Delay t -> delay t
   Submit era submitMode txParams generator -> submitAction era submitMode generator txParams
-  WaitBenchmark thread -> waitBenchmark thread
-  CancelBenchmark thread -> cancelBenchmark thread
+  WaitBenchmark _thread -> waitBenchmark
+  CancelBenchmark _thread -> cancelBenchmark
   WaitForEra era -> waitForEra era
   LogMsg txt -> traceDebug $ Text.unpack txt
   Reserved options -> reserved options

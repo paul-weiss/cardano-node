@@ -30,7 +30,6 @@ import           Control.Monad.IO.Class
 import           Control.Monad.STM as STM (atomically)
 import           Control.Monad.Trans.Except as Except (throwE)
 import qualified Data.List as List (intercalate)
-import qualified Data.Map as Map (lookup)
 import           System.Mem (performGC)
 
 type Script = [Action]
@@ -49,17 +48,12 @@ runScript env script iom = do
         pure (Right (), abc)
       (Left err,  env'@Env.Env { .. }, ()) -> do
         cleanup env' (Env.traceError (show err) >> shutDownLogging)
-        case "tx-submit-benchmark" `Map.lookup` envThreads of
-          Just abcTVar -> do
-            abcMaybe <- STM.atomically $ STM.readTVar abcTVar
-            case abcMaybe of
-              Just abc -> pure (Left err, abc)
-              Nothing  -> error $ List.intercalate " "
-                                    [ "Cardano.Benchmarking.Script.runScript:"
-                                    , "AsyncBenchmarkControl uninitialized" ]
+        abcMaybe <- STM.atomically $ STM.readTVar envThreads
+        case abcMaybe of
+          Just abc -> pure (Left err, abc)
           Nothing  -> error $ List.intercalate " "
                                 [ "Cardano.Benchmarking.Script.runScript:"
-                                , "AsyncBenchmarkControl absent from map" ]
+                                , "AsyncBenchmarkControl uninitialized" ]
       where
         cleanup :: Env.Env -> Env.ActionM () -> IO ()
         cleanup env' acts = void $ Env.runActionMEnv env' acts iom
@@ -67,7 +61,7 @@ runScript env script iom = do
         execScript = do
           setProtocolParameters QueryLocalNode
           forM_ script action
-          abcMaybe <- Env.getEnvThreads "tx-submit-benchmark"
+          abcMaybe <- Env.getEnvThreads
           case abcMaybe of
             Nothing  -> throwE $ Env.TxGenError $ Types.TxGenError $
               List.intercalate " "

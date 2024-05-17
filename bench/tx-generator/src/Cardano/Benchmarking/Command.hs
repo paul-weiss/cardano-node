@@ -45,7 +45,6 @@ import           Control.Monad.STM as STM (atomically)
 import           Data.Array.MArray as MArray (getBounds, readArray)
 import           Data.Foldable as Fold (forM_)
 import           Data.List as List (intercalate)
-import           Data.Map as Map (lookup)
 import           Data.Time.Format as Time (defaultTimeLocale, formatTime)
 import           Data.Time.Clock.System as Time (getSystemTime, systemToUTCTime)
 import           System.Posix.Signals as Sig (Handler (CatchInfoOnce), SignalInfo (..), SignalSpecificInfo (..), fullSignalSet, installHandler, sigINT, sigTERM)
@@ -103,14 +102,13 @@ runCommand = withIOManager $ \iocp -> do
   installSignalHandler :: IO Env
   installSignalHandler = do
     env@Env { .. } <- STM.atomically mkNewEnv
-    Just abcTVar <- pure $ "tx-submit-benchmark" `Map.lookup` envThreads
-    abc <- STM.atomically $ STM.readTVar abcTVar
+    abc <- STM.atomically $ STM.readTVar envThreads
     _ <- pure abc
 #ifdef UNIX
     let signalHandler = Sig.CatchInfoOnce signalHandler'
         signalHandler' sigInfo = do
           tid <- Conc.myThreadId
-          Just AsyncBenchmarkControl { .. } <- STM.atomically $ STM.readTVar abcTVar
+          Just AsyncBenchmarkControl { .. } <- STM.atomically $ STM.readTVar envThreads
           utcTime <- Time.systemToUTCTime <$> Time.getSystemTime
           -- It's meant to match Cardano.Tracers.Handlers.Logs.Utils
           -- The hope was to avoid the package dependency.
