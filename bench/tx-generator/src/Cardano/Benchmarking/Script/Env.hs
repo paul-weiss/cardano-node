@@ -30,7 +30,6 @@ module Cardano.Benchmarking.Script.Env (
         , Env (Env, envThreads)
         , Error (..)
         , mkNewEnv
-        , runActionM
         , runActionMEnv
         , liftTxGenError
         , liftIOSafe
@@ -132,12 +131,6 @@ mkNewEnv = do
 -- | This abbreviates an `ExceptT` and `RWST` with particular types
 -- used as parameters.
 type ActionM a = ExceptT Error (RWST IOManager () Env IO) a
-
--- | This runs an `ActionM` starting with an empty `Env`.
-runActionM :: ActionM ret -> IOManager -> IO (Either Error ret, Env, ())
-runActionM actions ioManager = do
-  env <- STM.atomically $ mkNewEnv
-  runActionMEnv env actions ioManager
 
 -- | This runs an `ActionM` starting with the `Env` being passed.
 runActionMEnv :: Env -> ActionM ret -> IOManager -> IO (Either Error ret, Env, ())

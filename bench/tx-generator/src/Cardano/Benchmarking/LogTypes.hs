@@ -12,7 +12,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Cardano.Benchmarking.LogTypes
-  ( AsyncBenchmarkControl
+  ( AsyncBenchmarkControl (..)
   , BenchTracers(..)
   , NodeToNodeSubmissionTrace(..)
   , SendRecvConnect
@@ -58,7 +58,17 @@ import           Cardano.Benchmarking.Version as Version
 import           Cardano.TxGenerator.PlutusContext (PlutusBudgetSummary)
 import           Cardano.TxGenerator.Types (TPSRate)
 
-type AsyncBenchmarkControl = (Async.Async (), STM.TArray Int (Async.Async ()), IO SubmissionSummary, IO ())
+data AsyncBenchmarkControl =
+  AsyncBenchmarkControl
+  { abcFeeder   :: Async.Async ()
+  -- ^ The thread to feed transactions, also called a throttler.
+  , abcWorkers  :: STM.TArray Int (Async.Async ())
+  -- ^ The per-node transaction submission threads.
+  , abcSummary  :: IO SubmissionSummary
+  -- ^ IO action to emit a summary.
+  , abcShutdown :: IO ()
+  -- ^ IO action to shut down the feeder thread.
+  }
 
 data BenchTracers =
   BenchTracers

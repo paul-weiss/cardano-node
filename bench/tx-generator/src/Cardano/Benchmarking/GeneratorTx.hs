@@ -61,10 +61,10 @@ import           Network.Socket (AddrInfo (..), AddrInfoFlag (..), Family (..), 
 
 
 waitBenchmark :: Trace IO (TraceBenchTxSubmit TxId) -> AsyncBenchmarkControl -> ExceptT TxGenError IO ()
-waitBenchmark traceSubmit (feeder, workers, mkSummary, _) = liftIO $ do
-  workers' :: [Async ()] <- STM.atomically $ MArray.getElems workers
-  mapM_ waitCatch $ feeder : workers'
-  traceWith traceSubmit . TraceBenchTxSubSummary =<< mkSummary
+waitBenchmark traceSubmit AsyncBenchmarkControl { .. } = liftIO $ do
+  workers' :: [Async ()] <- STM.atomically $ MArray.getElems abcWorkers
+  mapM_ waitCatch $ abcFeeder : workers'
+  traceWith traceSubmit . TraceBenchTxSubSummary =<< abcSummary
 
 lookupNodeAddress :: NodeIPv4Address -> IO AddrInfo
 lookupNodeAddress node = do
@@ -159,7 +159,7 @@ walletBenchmark
 
   txStreamRef <- newMVar $ StreamActive txSource
 
-  (allAsyncs, reportRefs, asyncArray, top) <- atomically do
+  (abcWorkers, reportRefs, asyncArray, top) <- atomically do
     reportRefs' :: [ReportRef] <- replicateM (fromIntegral numTargets) STM.newEmptyTMVar
     asyncArray' :: STM.TArray Int (ReportRef, (String, AddrInfo))
         <- MArray.newListArray (1, maxBound) . zip reportRefs' $ NE.toList remoteAddresses
@@ -192,7 +192,7 @@ walletBenchmark
     let tid = asyncThreadId asyncThread
     Conc.labelThread tid $ "txSubmissionClient " ++ show tid ++
                             " servicing " ++ remoteName ++ " (" ++ remoteAddrString ++ ")"
-    STM.atomically do MArray.writeArray allAsyncs k asyncThread
+    STM.atomically do MArray.writeArray abcWorkers k asyncThread
                       counter <- STM.takeTMVar barrier
                       STM.putTMVar barrier $ counter + 1
                       -- Two for each node, plus the throttler and this thread.
@@ -200,21 +200,21 @@ walletBenchmark
                         STM.signalTSemN (fromIntegral $ top + 2) semaphore
                       -- It only needs to signal getting past here, not to wait.
 
-  tpsThrottleThread <- async $ do
+  abcFeeder :: Async () <- async $ do
     waitBarrier
     startSending tpsThrottle
     traceWith traceSubmit $ TraceBenchTxSubDebug "tpsLimitedFeeder : transmitting done"
     STM.atomically $ sendStop tpsThrottle
     traceWith traceSubmit $ TraceBenchTxSubDebug "tpsLimitedFeeder : shutdown done"
-  let tid = asyncThreadId tpsThrottleThread
+  let tid = asyncThreadId abcFeeder
   labelThread tid $ "tpsThrottleThread " ++ show tid
 
-  let tpsFeederShutdown = do
-        cancel tpsThrottleThread
+  let abcShutdown :: IO () = do
+        cancel abcFeeder
         liftIO $ STM.atomically $ sendStop tpsThrottle
 
   waitBarrier
-  return (tpsThrottleThread, allAsyncs, mkSubmissionSummary threadName startTime reportRefs, tpsFeederShutdown)
+  pure AsyncBenchmarkControl { abcSummary = mkSubmissionSummary threadName startTime reportRefs, .. }
  where
   traceDebug :: String -> IO ()
   traceDebug =   traceWith traceSubmit . TraceBenchTxSubDebug

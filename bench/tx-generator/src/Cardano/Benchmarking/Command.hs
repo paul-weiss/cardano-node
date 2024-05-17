@@ -19,6 +19,7 @@ where
 #endif
 
 import           Cardano.Benchmarking.Compiler (compileOptions)
+import           Cardano.Benchmarking.LogTypes (AsyncBenchmarkControl (..))
 import           Cardano.Benchmarking.Script (parseScriptFileAeson, runScript)
 import           Cardano.Benchmarking.Script.Aeson (parseJSONFile, prettyPrint)
 import           Cardano.Benchmarking.Script.Env as Env (Env (Env, envThreads), mkNewEnv)
@@ -109,7 +110,7 @@ runCommand = withIOManager $ \iocp -> do
     let signalHandler = Sig.CatchInfoOnce signalHandler'
         signalHandler' sigInfo = do
           tid <- Conc.myThreadId
-          Just (throttler, workers, _, _) <- STM.atomically $ STM.readTVar abcTVar
+          Just AsyncBenchmarkControl { .. } <- STM.atomically $ STM.readTVar abcTVar
           utcTime <- Time.systemToUTCTime <$> Time.getSystemTime
           -- It's meant to match Cardano.Tracers.Handlers.Logs.Utils
           -- The hope was to avoid the package dependency.
@@ -133,10 +134,10 @@ runCommand = withIOManager $ \iocp -> do
               errorToThrow = userError labelStr
 
           Prelude.putStrLn labelStr
-          Async.cancelWith throttler errorToThrow
-          (_, top) <- STM.atomically $ MArray.getBounds workers
+          Async.cancelWith abcFeeder errorToThrow
+          (_, top) <- STM.atomically $ MArray.getBounds abcWorkers
           Fold.forM_ [1 .. top] \k -> do
-            work <- STM.atomically $ MArray.readArray workers k
+            work <- STM.atomically $ MArray.readArray abcWorkers k
             Async.cancelWith work errorToThrow
     Fold.forM_ [Sig.sigINT, Sig.sigTERM] $ \sig ->
            Sig.installHandler sig signalHandler $ Just fullSignalSet
