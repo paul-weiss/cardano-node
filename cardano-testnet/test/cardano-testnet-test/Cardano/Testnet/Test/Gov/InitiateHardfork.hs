@@ -34,12 +34,12 @@ import           Lens.Micro
 import           System.FilePath ((</>))
 
 import           Testnet.Components.Configuration
-import           Testnet.Components.DRep (createVotingTxBody, generateVoteFiles,
-                   retrieveTransactionId, signTx, submitTx)
 import           Testnet.Components.Query
 import           Testnet.Components.TestWatchdog
 import           Testnet.Defaults
-import qualified Testnet.Process.Cli as P
+import qualified Testnet.Process.Cli.DRep as DRep
+import           Testnet.Process.Cli.Keys
+import           Testnet.Process.Cli.Transaction
 import qualified Testnet.Process.Run as H
 import qualified Testnet.Property.Util as H
 import           Testnet.Types
@@ -48,8 +48,7 @@ import           Hedgehog
 import qualified Hedgehog.Extras as H
 
 -- | Execute me with:
--- TODO: Update me!
--- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/Update PParams/"'@
+-- @DISABLE_RETRIES=1 cabal test cardano-testnet-test --test-options '-p "/Hardfork Initiation/"'@
 -- We test the hardfork initiation by starting a testnet in the Babbage era, submitting
 -- an update proposal ()
 hprop_initiate_hardfork :: Property
@@ -140,7 +139,7 @@ hprop_initiate_hardfork = H.integrationWorkspace "propose-new-constitution" $ \t
   let stakeVkeyFp = gov </> "stake.vkey"
       stakeSKeyFp = gov </> "stake.skey"
 
-  P.cliStakeAddressKeyGen
+  cliStakeAddressKeyGen
     $ KeyPair { verificationKey = File stakeVkeyFp
               , signingKey = File stakeSKeyFp
               }
@@ -151,7 +150,7 @@ hprop_initiate_hardfork = H.integrationWorkspace "propose-new-constitution" $ \t
   void $ H.execCli' execConfig
     [ anyEraToString cEra, "governance", "action", "create-protocol-parameters-update"
     , "--testnet"
-    , "--governance-action-deposit", show @Int 2_000_000 -- TODO: retrieve this from conway genesis.
+    , "--governance-action-deposit", show @Int 1_000_000 -- TODO: retrieve this from conway genesis.
     , "--deposit-return-stake-verification-key-file", stakeVkeyFp
     , "--anchor-url", "https://tinyurl.com/3wrwb2as"
     , "--anchor-data-hash", proposalAnchorDataHash
@@ -214,22 +213,18 @@ hprop_initiate_hardfork = H.integrationWorkspace "propose-new-constitution" $ \t
   -- Need to vote on proposal. Drep threshold must be met
   governanceActionTxIdPParamUpdate <- retrieveTransactionId execConfig signedPParamsProposalTx
 
-  !pparamsPropSubmittedResult
-   <- H.leftFailM $ findCondition
-        (maybeExtractGovernanceActionIndex (fromString governanceActionTxIdPParamUpdate))
-        configurationFile
-        socketPath
-        (EpochNo 5)
-
-  governanceActionIndexPParams <- H.nothingFail pparamsPropSubmittedResult
+  !governanceActionIndexPParams
+   <- H.nothingFailM $ watchEpochStateView epochStateView
+        (return . maybeExtractGovernanceActionIndex (fromString governanceActionTxIdPParamUpdate))
+        (EpochInterval 5)
 
   -- Proposal was successfully submitted, now we vote on the proposal and confirm it was ratified
-  pparamsVoteFiles <- generateVoteFiles execConfig work "pparams-update-vote-files"
+  pparamsVoteFiles <- DRep.generateVoteFiles execConfig work "pparams-update-vote-files"
                         governanceActionTxIdPParamUpdate governanceActionIndexPParams
                         [(defaultDRepKeyPair idx, vote) | (vote, idx) <- allVotes]
 
   -- Submit votes
-  pparamsVoteTxBodyFp <- createVotingTxBody execConfig epochStateView sbe work "pparams-vote-tx-body"
+  pparamsVoteTxBodyFp <- DRep.createVotingTxBody execConfig epochStateView sbe work "pparams-vote-tx-body"
                            pparamsVoteFiles wallet0
 
   let signingKeys = SomeKeyPair <$> (paymentKeyInfoPair wallet0:(defaultDRepKeyPair . snd <$> allVotes))
@@ -237,12 +232,10 @@ hprop_initiate_hardfork = H.integrationWorkspace "propose-new-constitution" $ \t
   pparamsVoteTxFp <- signTx execConfig cEra work "signed-vote-tx" pparamsVoteTxBodyFp signingKeys
   submitTx execConfig cEra pparamsVoteTxFp
 
-  mPParamsUpdate
-    <- H.leftFailM $ findCondition
-         (checkPParamsUpdated (EpochInterval newCommitteeTermLength))
-         configurationFile socketPath (EpochNo 10)
+  void $ H.nothingFailM $ watchEpochStateView epochStateView
+         (return . checkPParamsUpdated (EpochInterval newCommitteeTermLength))
+         (EpochInterval 10)
 
-  H.nothingFail mPParamsUpdate
 
 checkPParamsUpdated
   :: EpochInterval -- ^ The epoch interval to check for in the updated protocol parameters

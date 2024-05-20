@@ -16,6 +16,7 @@ import qualified Cardano.Testnet.Test.FoldEpochState
 import qualified Cardano.Testnet.Test.Gov.CommitteeAddNew as Gov
 import qualified Cardano.Testnet.Test.Gov.DRepDeposit as Gov
 import qualified Cardano.Testnet.Test.Gov.DRepRetirement as Gov
+import qualified Cardano.Testnet.Test.Gov.InitiateHardfork as Gov
 import qualified Cardano.Testnet.Test.Gov.NoConfidence as Gov
 import qualified Cardano.Testnet.Test.Gov.ProposeNewConstitution as Gov
 import qualified Cardano.Testnet.Test.Gov.ProposeNewConstitutionSPO as Gov
@@ -50,6 +51,7 @@ tests = do
             -- TODO: Replace foldBlocks with checkLedgerStateCondition
             , T.testGroup "Governance"
                 [ ignoreOnMacAndWindows "Committee Add New" Gov.hprop_constitutional_committee_add_new
+                , ignoreOnMacAndWindows "Hardfork Initiation" Gov.hprop_initiate_hardfork
                 -- TODO: Disabled because proposals for parameter changes are not working
                 -- , ignoreOnWindows "DRep Activity" Gov.hprop_check_drep_activity
                 -- , ignoreOnWindows "Predefined Abstain DRep" Gov.hprop_check_predefined_abstain_drep
