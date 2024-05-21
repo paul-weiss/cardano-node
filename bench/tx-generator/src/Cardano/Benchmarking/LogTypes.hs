@@ -13,18 +13,19 @@
 
 module Cardano.Benchmarking.LogTypes
   ( AsyncBenchmarkControl (..)
-  , BenchTracers(..)
-  , NodeToNodeSubmissionTrace(..)
+  , BenchTracers (..)
+  , EnvConsts (..)
+  , NodeToNodeSubmissionTrace (..)
   , SendRecvConnect
   , SendRecvTxSubmission2
-  , SubmissionSummary(..)
-  , TraceBenchTxSubmit(..)
+  , SubmissionSummary (..)
+  , TraceBenchTxSubmit (..)
   ) where
 
 import           Prelude
 
 import qualified Control.Concurrent.Async as Async (Async)
-import qualified Control.Concurrent.STM as STM (TArray)
+import qualified Control.Concurrent.STM as STM (TArray, TVar)
 
 import           Data.Text
 import           Data.Time.Clock (DiffTime, NominalDiffTime)
@@ -49,6 +50,7 @@ import           Cardano.Tracing.OrphanInstances.Shelley ()
 import           Cardano.Benchmarking.OuroborosImports
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx, GenTxId)
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
+import           Ouroboros.Network.IOManager (IOManager)
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion, RemoteConnectionId)
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
@@ -56,6 +58,7 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import           Cardano.Benchmarking.Types
 import           Cardano.Benchmarking.Version as Version
 import           Cardano.TxGenerator.PlutusContext (PlutusBudgetSummary)
+import           Cardano.TxGenerator.Setup.NixService (NixServiceOptions (..))
 import           Cardano.TxGenerator.Types (TPSRate)
 
 data AsyncBenchmarkControl =
@@ -68,6 +71,18 @@ data AsyncBenchmarkControl =
   -- ^ IO action to emit a summary.
   , abcShutdown :: IO ()
   -- ^ IO action to shut down the feeder thread.
+  }
+
+data EnvConsts =
+  EnvConsts
+  { envIOManager  :: IOManager
+  , envThreads    :: STM.TVar (Maybe AsyncBenchmarkControl)
+  -- ^ The reference needs to be a constant, but the referred-to data
+  --   (`AsyncBenchmarkControl`) needs to be able to be initialized.
+  --   This could in principle be an `IORef` instead of a `STM.TVar`.
+  , envNixSvcOpts :: Maybe NixServiceOptions
+  -- ^ There are situations `NixServiceOptions` won't be available and
+  --   defaults will have to be used.
   }
 
 data BenchTracers =

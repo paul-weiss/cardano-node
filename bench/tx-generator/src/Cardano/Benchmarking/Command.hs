@@ -19,14 +19,14 @@ where
 #endif
 
 import           Cardano.Benchmarking.Compiler (compileOptions)
-import           Cardano.Benchmarking.LogTypes (AsyncBenchmarkControl (..))
+import           Cardano.Benchmarking.LogTypes (AsyncBenchmarkControl (..), EnvConsts (..))
 import           Cardano.Benchmarking.Script (parseScriptFileAeson, runScript)
 import           Cardano.Benchmarking.Script.Aeson (parseJSONFile, prettyPrint)
-import           Cardano.Benchmarking.Script.Env as Env (Env (Env, envThreads), mkNewEnv)
+import           Cardano.Benchmarking.Script.Env as Env (emptyEnv, newEnvConsts)
 import           Cardano.Benchmarking.Script.Selftest (runSelftest)
 import           Cardano.Benchmarking.Version as Version
 import           Cardano.TxGenerator.Setup.NixService
-import           Ouroboros.Network.NodeToClient (withIOManager)
+import           Ouroboros.Network.NodeToClient (IOManager, withIOManager)
 
 import           Prelude
 
@@ -67,41 +67,45 @@ data Command
   | VersionCmd
 
 runCommand :: IO ()
-runCommand = withIOManager $ \iocp -> do
-  env <- installSignalHandler
+runCommand = withIOManager runCommand'
+
+runCommand' :: IOManager -> IO ()
+runCommand' iocp = do
+  envConsts <- installSignalHandler
   cmd <- customExecParser
            (prefs showHelpOnEmpty)
            (info commandParser mempty)
   case cmd of
-    Json file -> do
-      script <- parseScriptFileAeson file
-      runScript env script iocp >>= handleError
-    JsonHL file nodeConfigOverwrite cardanoTracerOverwrite -> do
-      opts <- parseJSONFile fromJSON file
+    Json actionFile -> do
+      script <- parseScriptFileAeson actionFile
+      runScript emptyEnv script envConsts >>= handleError
+    JsonHL nixSvcOptsFile nodeConfigOverwrite cardanoTracerOverwrite -> do
+      opts <- parseJSONFile fromJSON nixSvcOptsFile
       finalOpts <- mangleTracerConfig cardanoTracerOverwrite <$> mangleNodeConfig nodeConfigOverwrite opts
+      let consts = envConsts { envNixSvcOpts = Just finalOpts }
 
       Prelude.putStrLn $
           "--> initial options:\n" ++ show opts ++
         "\n--> final options:\n" ++ show finalOpts
 
       case compileOptions finalOpts of
-        Right script -> runScript env script iocp >>= handleError
+        Right script -> runScript emptyEnv script consts >>= handleError
         err -> die $ "tx-generator:Cardano.Command.runCommand JsonHL: " ++ show err
     Compile file -> do
       o <- parseJSONFile fromJSON file
       case compileOptions o of
         Right script -> BSL.putStr $ prettyPrint script
         Left err -> die $ "tx-generator:Cardano.Command.runCommand Compile: " ++ show err
-    Selftest outFile -> runSelftest env iocp outFile >>= handleError
+    Selftest outFile -> runSelftest emptyEnv envConsts outFile >>= handleError
     VersionCmd -> runVersionCommand
   where
   handleError :: Show a => (Either a b, abc) -> IO ()
   handleError = \case
     (Right _,  _) -> exitSuccess
     (Left err, _) -> die $ "tx-generator:Cardano.Command.runCommand handleError: " ++ show err
-  installSignalHandler :: IO Env
+  installSignalHandler :: IO EnvConsts
   installSignalHandler = do
-    env@Env { .. } <- STM.atomically mkNewEnv
+    envConsts@EnvConsts { .. } <- STM.atomically $ newEnvConsts iocp Nothing
     abc <- STM.atomically $ STM.readTVar envThreads
     _ <- pure abc
 #ifdef UNIX
@@ -140,7 +144,7 @@ runCommand = withIOManager $ \iocp -> do
     Fold.forM_ [Sig.sigINT, Sig.sigTERM] $ \sig ->
            Sig.installHandler sig signalHandler $ Just fullSignalSet
 #endif
-    pure env
+    pure envConsts
 
   mangleNodeConfig :: Maybe FilePath -> NixServiceOptions -> IO NixServiceOptions
   mangleNodeConfig fp opts = case (getNodeConfigFile opts, fp) of
