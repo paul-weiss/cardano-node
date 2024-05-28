@@ -47,13 +47,11 @@ import qualified Cardano.Ledger.Coin as L
 import qualified Cardano.Ledger.Conway.Governance as L
 import qualified Cardano.Ledger.Conway.PParams as L
 import qualified Cardano.Ledger.Shelley.LedgerState as L
-import qualified Cardano.Ledger.UTxO as L
 
 import           Control.Exception.Safe (MonadCatch)
 import           Control.Monad
 import           Control.Monad.Trans.Resource
 import           Control.Monad.Trans.State.Strict (put)
-import           Data.Bifunctor (bimap)
 import           Data.IORef
 import           Data.List (sortOn)
 import           Data.Map.Strict (Map)
@@ -296,20 +294,9 @@ findAllUtxos
   -> ShelleyBasedEra era
   -> m (Map TxIn (TxOut CtxUTxO era))
 findAllUtxos epochStateView sbe = withFrozenCallStack $ do
-  AnyNewEpochState sbe' newEpochState <- getEpochState epochStateView
+  AnyNewEpochState sbe' _ tbs <- getEpochState epochStateView
   Refl <- H.leftFail $ assertErasEqual sbe sbe'
-  pure $ fromLedgerUTxO $ newEpochState ^. L.nesEsL . L.esLStateL . L.lsUTxOStateL . L.utxosUtxoL
-  where
-    fromLedgerUTxO
-      :: ()
-      => L.UTxO (ShelleyLedgerEra era)
-      -> Map TxIn (TxOut CtxUTxO era)
-    fromLedgerUTxO (L.UTxO utxo) =
-      shelleyBasedEraConstraints sbe
-        $ Map.fromList
-        . map (bimap fromShelleyTxIn (fromShelleyTxOut sbe))
-        . Map.toList
-        $ utxo
+  pure $ getUTxOValues sbe' tbs
 
 -- | Retrieve utxos from the epoch state view for an address.
 findUtxosWithAddress
@@ -412,7 +399,7 @@ checkDRepState epochStateView@EpochStateView{nodeConfigPath, socketPath} sbe f =
   currentEpoch <- getCurrentEpochNo epochStateView
   let terminationEpoch = succ . succ $ currentEpoch
   result <- H.evalIO . runExceptT $ foldEpochState nodeConfigPath socketPath QuickValidation terminationEpoch Nothing
-      $ \(AnyNewEpochState actualEra newEpochState) _slotNumber _blockNumber -> do
+      $ \(AnyNewEpochState actualEra newEpochState _) _slotNumber _blockNumber -> do
         Refl <- either error pure $ assertErasEqual sbe actualEra
         let dreps = shelleyBasedEraConstraints sbe newEpochState
                       ^. L.nesEsL
@@ -458,7 +445,7 @@ getGovState
   -> ConwayEraOnwards era
   -> m (L.ConwayGovState (ShelleyLedgerEra era)) -- ^ The governance state
 getGovState epochStateView ceo = withFrozenCallStack $ do
-  AnyNewEpochState sbe' newEpochState <- getEpochState epochStateView
+  AnyNewEpochState sbe' newEpochState _ <- getEpochState epochStateView
   let sbe = conwayEraOnwardsToShelleyBasedEra ceo
   Refl <- H.leftFail $ assertErasEqual sbe sbe'
   pure $ conwayEraOnwardsConstraints ceo $ newEpochState ^. L.newEpochStateGovStateL
@@ -501,7 +488,7 @@ getCurrentEpochNo
   => EpochStateView
   -> m EpochNo
 getCurrentEpochNo epochStateView = withFrozenCallStack $ do
-  AnyNewEpochState _ newEpochState <- getEpochState epochStateView
+  AnyNewEpochState _ newEpochState _ <- getEpochState epochStateView
   pure $ newEpochState ^. L.nesELL
 
 -- | Assert that the value pointed by the @lens@ in the epoch state is the same as the @expected@ value
@@ -549,4 +536,3 @@ assertNewEpochState epochStateView sbe maxWait lens expected = withFrozenCallSta
       \(AnyNewEpochState actualEra newEpochState, _, _) -> do
         Refl <- H.leftFail $ assertErasEqual sbe actualEra
         pure $ newEpochState ^. lens
-
