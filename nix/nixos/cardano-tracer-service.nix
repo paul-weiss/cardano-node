@@ -65,16 +65,17 @@ in pkgs.commonLib.defServiceModule
 
       extraOptionDecls = {
         ### You can actually change those!
-        networkMagic    = opt    int 764824073 "Network magic (764824073 for Cardano mainnet).";
-        acceptingSocket = mayOpt str           "Socket path: as acceptor.";
-        connectToSocket = mayOpt str           "Socket path: connect to.";
-        logRoot         = opt    str null      "Log storage root directory.";
-        rotation        = opt    attrs {}      "Log rotation overrides: see cardano-tracer documentation.";
-        RTView          = opt    attrs {}      "RTView config overrides: see cardano-tracer documentation.";
-        ekgPortBase     = opt    int 3100      "EKG port base.";
-        ekgRequestFreq  = opt    int 1         "EKG request frequency";
-        prometheus      = opt    attrs {}      "Prometheus overrides: see cardano-tracer documentation.";
-        resourceFreq    = mayOpt int           "Frequency (1/ms) for tracing resource usage.";
+        networkMagic    = opt    int 764824073   "Network magic (764824073 for Cardano mainnet).";
+        acceptingSocket = mayOpt str             "Socket path: as acceptor.";
+        connectToSocket = mayOpt str             "Socket path: connect to.";
+        logRoot         = opt    str null        "Log storage root directory.";
+        rotation        = opt    attrs {}        "Log rotation overrides: see cardano-tracer documentation.";
+        RTView          = opt    attrs {}        "RTView config overrides: see cardano-tracer documentation.";
+        ekgPortBase     = opt    int 3100        "EKG port base.";
+        ekgRequestFreq  = opt    int 1           "EKG request frequency";
+        prometheus      = opt    attrs {}        "Prometheus overrides: see cardano-tracer documentation.";
+        resourceFreq    = mayOpt int             "Frequency (1/ms) for tracing resource usage.";
+        extraCliArgs    = opt    (listOf str) [] "Extra CLI args.";
 
         ### Here be dragons, on the other hand..
         configFile      = mayOpt str
@@ -87,7 +88,7 @@ in pkgs.commonLib.defServiceModule
         "--config" (if cfg.configFile != null then cfg.configFile
                     else "${pkgs.writeText "cardano-tracer-config.json"
                                            (__toJSON (serviceConfigToJSON cfg))}")
-        ];
+        ] ++ cfg.extraCliArgs;
 
       configSystemdExtraConfig = _: {};
 
