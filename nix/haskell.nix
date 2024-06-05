@@ -53,7 +53,7 @@ let
           shellcheck
         ];
 
-        withHoogle = true;
+        withHoogle = false;
       };
 
 
