@@ -54,10 +54,8 @@ nodeRunParser = do
   -- Filepaths
   topFp <- lastOption parseTopologyFile
   dbFp <- lastOption parseDbPath
-  validate <- lastOption parseValidateDB
   socketFp <- lastOption $ parseSocketPath "Path to a cardano-node socket"
   traceForwardSocket <- lastOption parseTracerSocketMode
-  nodeConfigFp <- lastOption parseConfigFile
 
   -- Protocol files
   byronCertFile   <- optional parseByronDelegationCert
@@ -86,8 +84,6 @@ nodeRunParser = do
   maybeMempoolCapacityOverride <- lastOption parseMempoolCapacityOverride
 
   -- LedgerDB configuration
-  numOfDiskSnapshots <- lastOption parseNumOfDiskSnapshots
-  snapshotInterval   <- lastOption parseSnapshotInterval
   ledgerDBBackend    <- lastOption parseLedgerDBBackend
   pncFlushFrequency  <- lastOption parseFlushFrequency
   pncQueryBatchSize  <- lastOption parseQueryBatchSize

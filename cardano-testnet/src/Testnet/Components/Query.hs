@@ -40,7 +40,7 @@ module Testnet.Components.Query
 import           Cardano.Api as Api
 import           Cardano.Api.Ledger (Credential, DRepState, EpochInterval (..), KeyRole (DRepRole),
                    StandardCrypto)
-import           Cardano.Api.Shelley (ShelleyLedgerEra, fromShelleyTxIn, fromShelleyTxOut)
+import           Cardano.Api.Shelley (ShelleyLedgerEra)
 
 import qualified Cardano.Ledger.Api as L
 import qualified Cardano.Ledger.Coin as L
@@ -56,7 +56,6 @@ import           Data.IORef
 import           Data.List (sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
-import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.Ord (Down (..))
 import           Data.Text (Text)
@@ -268,13 +267,13 @@ watchEpochStateUpdate
   -> ((AnyNewEpochState, SlotNo, BlockNo) -> m (Maybe a)) -- ^ The guard function (@Just@ if the condition is met, @Nothing@ otherwise)
   -> m (Maybe a)
 watchEpochStateUpdate epochStateView (EpochInterval maxWait) f  = withFrozenCallStack $ do
-  AnyNewEpochState _ newEpochState <- getEpochState epochStateView
+  AnyNewEpochState _ newEpochState _ <- getEpochState epochStateView
   let EpochNo currentEpoch = L.nesEL newEpochState
   go $ currentEpoch + fromIntegral maxWait
     where
       go :: Word64 -> m (Maybe a)
       go timeout = do
-        newEpochStateDetails@(AnyNewEpochState _ newEpochState', _, _) <- getEpochStateDetails epochStateView pure
+        newEpochStateDetails@(AnyNewEpochState _ newEpochState' _, _, _) <- getEpochStateDetails epochStateView pure
         let EpochNo currentEpoch = L.nesEL newEpochState'
         f newEpochStateDetails >>= \case
           Just result -> pure (Just result)
@@ -533,6 +532,6 @@ assertNewEpochState epochStateView sbe maxWait lens expected = withFrozenCallSta
       :: HasCallStack
       => m value
     getFromEpochStateForEra = withFrozenCallStack $ getEpochStateDetails epochStateView $
-      \(AnyNewEpochState actualEra newEpochState, _, _) -> do
+      \(AnyNewEpochState actualEra newEpochState _, _, _) -> do
         Refl <- H.leftFail $ assertErasEqual sbe actualEra
         pure $ newEpochState ^. lens
