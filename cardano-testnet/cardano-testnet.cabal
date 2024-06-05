@@ -75,6 +75,7 @@ library
                       , process
                       , random
                       , resourcet
+                      , retry
                       , safe-exceptions
                       , scientific
                       , si-timers
@@ -82,6 +83,7 @@ library
                       , tasty ^>= 1.5
                       , tasty-expected-failure
                       , tasty-hedgehog
+                      , temporary
                       , text
                       , time
                       , transformers
@@ -228,7 +230,7 @@ test-suite cardano-testnet-test
                       , exceptions
                       , filepath
                       , hedgehog
-                      , hedgehog-extras 
+                      , hedgehog-extras
                       , http-conduit
                       , lens-aeson
                       , microlens
