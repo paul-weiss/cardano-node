@@ -13,21 +13,12 @@ module Cardano.Node.Tracing.Tracers.StartLeadershipCheck
 
 
 import           Cardano.Logging
-import           Cardano.Node.Queries (LedgerQueries (..), NodeKernelData (..))
-import           Cardano.Slotting.Slot (fromWithOrigin)
-import           Ouroboros.Consensus.Block (SlotNo (..), blockNo, BlockNo (..))
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.Ledger.Extended (ledgerState)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node (NodeKernel (..))
-import           Ouroboros.Consensus.Node.Tracers
-import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.API as LedgerDB
 
 import           Control.Concurrent.STM (atomically)
 import           Data.IORef (readIORef)
 import           Data.Word (Word64)
-import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo (..), blockNo, unBlockNo)
@@ -36,7 +27,7 @@ import           Ouroboros.Network.NodeToNode (RemoteAddress)
 
 import           Ouroboros.Consensus.Block (SlotNo (..))
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.Ledger.Abstract (IsLedger)
+import           Ouroboros.Consensus.Ledger.Abstract (EmptyMK)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState, ledgerState)
 import           Ouroboros.Consensus.Node (NodeKernel (..))
 import           Ouroboros.Consensus.Node.Tracers
@@ -92,8 +83,7 @@ forgeTracerTransform nodeKern (Trace tr) =
               pure (lc, Left control))
 
 nkQueryLedger ::
-     IsLedger (LedgerState blk)
-  => (ExtLedgerState blk -> a)
+     (ExtLedgerState blk EmptyMK -> a)
   -> NodeKernel IO RemoteAddress LocalConnectionId blk
   -> IO a
 nkQueryLedger f NodeKernel{getChainDB} =
