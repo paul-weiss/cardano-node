@@ -92,13 +92,13 @@ workspace prefixPath f = withFrozenCallStack $ do
       . register
       . R.recovering retryPolicy [ioExH]
       . const
-      $ IO.removePathForcibly ws
+      $ IO.removeDirectoryRecursive ws
 
 -- | The 'FilePath' in '(FilePath -> H.Integration ())' is the work space directory.
 -- This is created (and returned) via 'H.workspace'.
 integrationWorkspace :: HasCallStack => FilePath -> (FilePath -> H.Integration ()) -> H.Property
 integrationWorkspace workspaceName f = withFrozenCallStack $
-  integration $ H.runFinallies $ H.workspace workspaceName f
+  integration $ H.runFinallies $ workspace workspaceName f
 
 isLinux :: Bool
 isLinux = os == "linux"
