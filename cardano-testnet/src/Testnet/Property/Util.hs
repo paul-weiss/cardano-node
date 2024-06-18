@@ -97,8 +97,9 @@ workspace prefixPath f = withFrozenCallStack $ do
 -- | The 'FilePath' in '(FilePath -> H.Integration ())' is the work space directory.
 -- This is created (and returned) via 'H.workspace'.
 integrationWorkspace :: HasCallStack => FilePath -> (FilePath -> H.Integration ()) -> H.Property
-integrationWorkspace workspaceName f = withFrozenCallStack $
+integrationWorkspace workspaceName f = withFrozenCallStack . f' $
   integration $ H.runFinallies $ workspace workspaceName f
+  where f' = id
 
 isLinux :: Bool
 isLinux = os == "linux"
