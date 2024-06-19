@@ -92,7 +92,7 @@ workspace prefixPath f = withFrozenCallStack $ do
       . register
       . R.recovering retryPolicy [ioExH]
       . const
-      $ IO.removeDirectoryRecursive ws
+      $ IO.removePathForcibly ws
 
 -- | The 'FilePath' in '(FilePath -> H.Integration ())' is the work space directory.
 -- This is created (and returned) via 'H.workspace'.
