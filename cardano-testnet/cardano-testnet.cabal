@@ -73,7 +73,6 @@ library
                       , ouroboros-network-api
                       , prettyprinter
                       , process
-                      , random
                       , resourcet
                       , retry
                       , safe-exceptions
