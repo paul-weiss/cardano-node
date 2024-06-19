@@ -66,6 +66,7 @@ import           Testnet.Types as TR hiding (shelleyGenesis)
 import           Hedgehog (MonadTest)
 import qualified Hedgehog as H
 import qualified Hedgehog.Extras as H
+import qualified Hedgehog.Extras.Stock.IO.Network.Port as H
 import qualified Hedgehog.Extras.Stock.OS as OS
 
 -- | There are certain conditions that need to be met in order to run
@@ -226,8 +227,6 @@ cardanoTestnet
       nDReps = numDReps testnetOptions
       era = cardanoNodeEra testnetOptions
 
-  portNumbers <- requestAvailablePortNumbers numPoolNodes
-
    -- Sanity checks
   testnetMinimumConfigurationRequirements testnetOptions
   when (shelleyStartTime /= startTime) $ do
@@ -344,6 +343,9 @@ cardanoTestnet
 
     H.evalIO $ LBS.writeFile (unFile configurationFile) config
 
+    let ip = "10.0.0.1"
+    portNumbers <- requestAvailablePortNumbers numPoolNodes
+    -- H.reserveRandomPort
     -- Byron related
     forM_ (zip [1..] portNumbers) $ \(i, portNumber) -> do
       let iStr = printf "%03d" (i - 1)
