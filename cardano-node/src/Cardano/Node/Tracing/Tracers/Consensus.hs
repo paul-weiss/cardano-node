@@ -419,22 +419,20 @@ instance LogFormatting ClientMetrics where
       then
         let  size = Pq.size cmSlotMap
              msgs =
-               [ DoubleM
-                    "Blockfetch.Client.Blockdelay"
+               [ DoubleM "blockfetchclient_blockdelay_s"
                     cmDelay
-               , IntM
-                    "Blockfetch.Client.Blocksize"
+               , IntM "blockfetchclient_blocksize"
                     (fromIntegral cmBlockSize)
-               , DoubleM "Blockfetch.Client.Blockdelay.cdfOne"
+               , DoubleM "blockfetchclient_blockdelay_cdfOne"
                     (fromIntegral (counter cmCdf1sVar) / fromIntegral size)
-               , DoubleM "Blockfetch.Client.Blockdelay.cdfThree"
+               , DoubleM "blockfetchclient_blockdelay_cdfThree"
                     (fromIntegral (counter cmCdf3sVar) / fromIntegral size)
-               , DoubleM "Blockfetch.Client.Blockdelay.cdfFive"
+               , DoubleM "blockfetchclient_blockdelay_cdfFive"
                     (fromIntegral (counter cmCdf5sVar) / fromIntegral size)
                ]
         in if cmDelay > 5
              then
-               CounterM "Blockfetch.Client.Lateblocks" Nothing
+               CounterM "blockfetchclient_lateblocks" Nothing
                  : msgs
              else msgs
       else []
@@ -445,10 +443,12 @@ instance MetaTrace ClientMetrics where
   documentFor _ = Just ""
 
   metricsDocFor (Namespace _ ["ClientMetrics"]) =
-      [ ("Blockfetch.Client.Blockdelay", "")
-      , ("Blockfetch.Client.Blockdelay.cdfOne", "")
-      , ("Blockfetch.Client.Blockdelay.cdfThree", "")
-      , ("Blockfetch.Client.Blockdelay.cdfFive", "")
+      [ ("blockfetchclient_blockdelay_s", "")
+      , ("blockfetchclient_blocksize", "")
+      , ("blockfetchclient_lateblocks", "")
+      , ("blockfetchclient_blockdelay_cdfOne", "")
+      , ("blockfetchclient_blockdelay_cdfThree", "")
+      , ("blockfetchclient_blockdelay_cdfFive", "")
       ]
   metricsDocFor _ = []
 
