@@ -91,6 +91,7 @@ import           Cardano.Node.Tracing.Tracers.Startup (getStartupInfo)
 import           Cardano.Node.Types
 import           Cardano.Tracing.Config (TraceOptions (..), TraceSelection (..))
 
+import           Ouroboros.Consensus.Cardano (CardanoHardForkTriggers (..), ProtocolParams (..))
 import qualified Ouroboros.Consensus.Config as Consensus
 import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode (..))
 import           Ouroboros.Consensus.Node (DiskPolicyArgs (..), NetworkP2PMode (..),
@@ -171,6 +172,8 @@ runNode cmdPc = do
                                          -- don't need these.
                                          (Just $ ncProtocolFiles nc)
 
+    warnAboutProtocolVersionsForExperimentalHardForks (ncProtocolConfig nc) eitherSomeProtocol
+
     p :: SomeConsensusProtocol <-
       case eitherSomeProtocol of
         Left err -> Exception.throwIO err
@@ -185,6 +188,27 @@ runNode cmdPc = do
     case p of
       SomeConsensusProtocol blockType runP ->
         handleNodeWithTracers cmdPc nc p networkMagic blockType runP
+
+warnAboutProtocolVersionsForExperimentalHardForks :: NodeProtocolConfiguration
+  -> Either ProtocolInstantiationError SomeConsensusProtocol -> IO ()
+warnAboutProtocolVersionsForExperimentalHardForks _ (Left _) = pure ()
+warnAboutProtocolVersionsForExperimentalHardForks
+  (NodeProtocolConfigurationCardano
+     NodeByronProtocolConfiguration { npcByronSupportedProtocolVersionMajor }
+     NodeShelleyProtocolConfiguration { npcShelleyGenesisFile }
+     NodeAlonzoProtocolConfiguration { npcAlonzoGenesisFile }
+     NodeConwayProtocolConfiguration { npcConwayGenesisFile }
+     NodeHardForkProtocolConfiguration { npcExperimentalHardForksEnabled })
+  (Right (SomeConsensusProtocol CardanoBlockType
+     (ProtocolInfoArgsCardano CardanoProtocolParams
+        { hardForkTriggers = CardanoHardForkTriggers'
+            { triggerHardForkShelley, triggerHardForkAllegra
+            , triggerHardForkMary, triggerHardForkAlonzo
+            , triggerHardForkBabbage, triggerHardForkConway
+            }
+        }))) = do
+  when npcExperimentalHardForksEnabled $ do
+    pure ()
 
 -- | Workaround to ensure that the main thread throws an async exception on
 -- receiving a SIGTERM signal.
