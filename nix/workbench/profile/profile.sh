@@ -43,12 +43,7 @@ case "$op" in
         local usage="USAGE: wb profile $op NAME"
         local name=${1:?$usage}
 
-        with_era_profiles '
-          map (generate_all_era_profiles(.; null; null)
-               | map (.name == $name)
-               | any)
-          | any
-        ' --exit-status --arg name "$name" >/dev/null
+        profile profile-names | jq --exit-status --arg name "$name" 'map (. == $name) | any' >/dev/null
         ;;
 
     ## XXX:  does not respect overlays!!
@@ -79,7 +74,6 @@ case "$op" in
         then echo "$json"
         else jq '. * $overlay[0]' <<<$json --slurpfile overlay $preset_overlay
         fi;;
-# cardano-profile make "${name}"
 
     profile-describe | describe | pdesc | pd )
         local usage="USAGE: wb profile $op NAME"
@@ -179,18 +173,4 @@ case "$op" in
         ';;
 
     * ) set +x; usage_profile;; esac
-}
-
-with_era_profiles() {
-    local usage="USAGE: wb profile with-profiles JQEXP"
-    local jqexp=${1:?$usage}; shift
-
-    jq  -L "$global_basedir"                                            \
-        -L "$global_basedir"/profile                                    \
-        -L "$global_basedir"/profile/pparams                            \
-        --argjson eras "$(to_jsonlist ${global_profile_eras[*]})"       \
-        --null-input '
-       include "profiles";
-
-       $eras | '"$jqexp" "$@"
 }
