@@ -56,20 +56,19 @@ ekgTracer storeOrServer = liftIO $ do
       -> IO ()
     setIt rgsGauges _rgsLabels _rgsCounters _namespace
       (IntM name theInt) = do
-      gauge <- modifyMVar rgsGauges (setFunc Metrics.createGauge getGauge name)
+      gauge <- modifyMVar rgsGauges (setFunc Metrics.createGauge getGauge (name <> "_int"))
       Gauge.set gauge (fromIntegral theInt)
     setIt _rgsGauges rgsLabels _rgsCounters _namespace
       (DoubleM name theDouble) = do
-        label <- modifyMVar rgsLabels (setFunc Metrics.createLabel getLabel name)
+        label <- modifyMVar rgsLabels (setFunc Metrics.createLabel getLabel (name <> "_real"))
         Label.set label ((pack . show) theDouble)
     setIt _rgsGauges rgsLabels _rgsCounters _namespace
       (PrometheusM name keyLabels) = do
         label <- modifyMVar rgsLabels (setFunc Metrics.createLabel getLabel name)
         Label.set label (presentPrometheusM keyLabels)
-
     setIt _rgsGauges _rgsLabels rgsCounters _namespace
       (CounterM name mbInt) = do
-        counter <- modifyMVar rgsCounters (setFunc Metrics.createCounter getCounter name)
+        counter <- modifyMVar rgsCounters (setFunc Metrics.createCounter getCounter (name <> "_counter"))
         case mbInt of
           Nothing -> Counter.inc counter
           Just i  -> Counter.add counter (fromIntegral i)
