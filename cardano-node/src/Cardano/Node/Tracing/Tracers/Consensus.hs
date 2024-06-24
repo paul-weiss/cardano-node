@@ -419,7 +419,7 @@ instance LogFormatting ClientMetrics where
       then
         let  size = Pq.size cmSlotMap
              msgs =
-               [ DoubleM "blockfetchclient_blockdelay_s"
+               [ DoubleM "blockfetchclient_blockdelay"
                     cmDelay
                , IntM "blockfetchclient_blocksize"
                     (fromIntegral cmBlockSize)
@@ -443,7 +443,7 @@ instance MetaTrace ClientMetrics where
   documentFor _ = Just ""
 
   metricsDocFor (Namespace _ ["ClientMetrics"]) =
-      [ ("blockfetchclient_blockdelay_s", "")
+      [ ("blockfetchclient_blockdelay", "")
       , ("blockfetchclient_blocksize", "")
       , ("blockfetchclient_lateblocks", "")
       , ("blockfetchclient_blockdelay_cdfOne", "")
@@ -739,7 +739,7 @@ instance ConvertRawHash blk => LogFormatting (TraceBlockFetchServerEvent blk) wh
                                     (renderHeaderHash (Proxy @blk))
                                     $ pointHash blk)]
   asMetrics (TraceBlockFetchServerSendBlock _p) =
-    [CounterM "BlockFetch.BlocksServed" Nothing]
+    [CounterM "served_block_count" Nothing]
 
 instance MetaTrace (TraceBlockFetchServerEvent blk) where
     namespaceFor TraceBlockFetchServerSendBlock {} =
@@ -750,7 +750,7 @@ instance MetaTrace (TraceBlockFetchServerEvent blk) where
     severityFor _ _ = Nothing
 
     metricsDocFor (Namespace [] ["SendBlock"]) =
-      [("Blockfetch.BlocksServed", "")]
+      [("served_block_count", "")]
     metricsDocFor _ = []
 
     documentFor (Namespace [] ["SendBlock"]) = Just
@@ -791,11 +791,11 @@ instance LogFormatting (TraceTxSubmissionInbound txid tx) where
       ]
 
   asMetrics (TraceTxSubmissionCollected count)=
-    [CounterM "TxSubmission.Submitted" (Just count)]
+    [CounterM "submissions_submitted" (Just count)]
   asMetrics (TraceTxSubmissionProcessed processed) =
-    [ CounterM "TxSubmission.Accepted"
+    [ CounterM "submissions_accepted"
         (Just (ptxcAccepted processed))
-    , CounterM "TxSubmission.Rejected"
+    , CounterM "submissions_rejected"
         (Just (ptxcRejected processed))
     ]
   asMetrics _ = []
@@ -815,10 +815,10 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
     severityFor _ _ = Nothing
 
     metricsDocFor (Namespace _ ["Collected"]) =
-      [ ("TxSubmission.Submitted", "")]
+      [ ("submissions_submitted", "")]
     metricsDocFor (Namespace _ ["Processed"]) =
-      [ ("TxSubmission.Accepted", "")
-      , ("TxSubmission.Rejected", "")
+      [ ("submissions_accepted", "")
+      , ("submissions_rejected", "")
       ]
     metricsDocFor _ = []
 
@@ -1158,8 +1158,8 @@ instance LogFormatting TraceStartLeadershipCheckPlus where
       <> " delegMapSize " <> showT tsDelegMapSize
       <> " chainDensity " <> showT tsChainDensity
   asMetrics TraceStartLeadershipCheckPlus {..} =
-    [IntM "Forge.UtxoSize"     (fromIntegral tsUtxoSize),
-     IntM "Forge.DelegMapSize" (fromIntegral tsDelegMapSize)]
+    [IntM "utxoSize"     (fromIntegral tsUtxoSize),
+     IntM "delegMapSize" (fromIntegral tsDelegMapSize)]
 
 
 --------------------------------------------------------------------------------
